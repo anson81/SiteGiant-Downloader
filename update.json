@@ -1,0 +1,24 @@
+{
+    "version":  "1.4.0",
+    "notes":  [
+                  "Add a history list to the popup showing past runs, newest first, with a month tag on anything fetched for a specific month.",
+                  "Keeps failed runs too - a run that errored is the one you need to see again."
+              ],
+    "files":  [
+                  "background/background.js",
+                  "content/profitlens.js",
+                  "content/sitegiant.js",
+                  "icons/icon128.png",
+                  "icons/icon16.png",
+                  "icons/icon48.png",
+                  "manifest.json",
+                  "options/options.css",
+                  "options/options.html",
+                  "options/options.js",
+                  "popup/popup.css",
+                  "popup/popup.html",
+                  "popup/popup.js",
+                  "README.md",
+                  "update.json"
+              ]
+}

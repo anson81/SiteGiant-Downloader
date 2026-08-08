@@ -1,0 +1,365 @@
+:root {
+  --green: #16a34a;
+  --green-dark: #15803d;
+  --red: #dc2626;
+  --ink: #111827;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --bg-soft: #f9fafb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * Author `display` rules beat the browser's own `[hidden] { display: none }`,
+ * so any hidden element that also carries a display (the update bar is flex)
+ * would show anyway. Caught by looking at the rendered popup, not by reading.
+ */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  width: 340px;
+  margin: 0;
+  padding: 14px;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--ink);
+  background: #fff;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.version {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.update-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.primary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--green);
+  text-align: left;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--green-dark);
+}
+
+.primary small {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.9;
+}
+
+.single-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.single-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.ghost {
+  flex: 1;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--bg-soft);
+  border-color: var(--line);
+}
+
+input[type='month'] {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+input[type='month']:focus {
+  outline: 2px solid #bbf7d0;
+  border-color: var(--green);
+}
+
+.hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.ghost:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.danger {
+  padding: 9px 12px;
+  color: #fff;
+  background: var(--red);
+  font-weight: 600;
+}
+
+.banner {
+  margin-top: 12px;
+  padding: 9px 11px;
+  font-size: 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.banner.ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.progress {
+  margin-top: 14px;
+}
+
+.progress h2 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rows li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rows li:last-child {
+  border-bottom: 0;
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #d1d5db;
+}
+
+.dot.busy {
+  background: #f59e0b;
+}
+
+.dot.done {
+  background: var(--green);
+}
+
+.dot.error {
+  background: var(--red);
+}
+
+.row-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.row-label {
+  font-weight: 500;
+}
+
+.row-message {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.row-message.error {
+  color: var(--red);
+}
+
+.history {
+  margin-top: 14px;
+  font-size: 12px;
+}
+
+.history summary {
+  cursor: pointer;
+  padding: 7px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.history .count {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.history-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.history-list li {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-list li:last-child {
+  border-bottom: 0;
+}
+
+.history-when {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.history-what {
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+.history-detail {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.history-detail.error {
+  color: var(--red);
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.link {
+  margin-top: 8px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.empty {
+  padding: 10px;
+  color: var(--muted);
+}
+
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.footer-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+footer button {
+  padding: 5px 9px;
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--bg-soft);
+  border-color: var(--line);
+}

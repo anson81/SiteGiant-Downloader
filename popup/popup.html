@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>&#128230; SiteGiant Downloader</h1>
+      <span id="version" class="version">v…</span>
+    </header>
+
+    <div id="update-bar" class="update-bar" hidden>
+      <span id="update-text"></span>
+      <button id="update-action" hidden>Update</button>
+    </div>
+
+    <section class="actions">
+      <button id="run-all" class="primary">
+        Sync both reports
+        <small>Orders + Stock &amp; Cost &middot; about a minute</small>
+      </button>
+
+      <div class="single">
+        <span class="single-label">Or just one</span>
+        <div class="single-buttons">
+          <button id="run-orders" class="ghost" type="button">Orders</button>
+          <button id="run-stockcost" class="ghost" type="button">Stock &amp; Cost</button>
+        </div>
+      </div>
+
+      <div class="single">
+        <span class="single-label">Get a past month</span>
+        <div class="single-buttons">
+          <input id="month" type="month" />
+          <button id="run-month" class="ghost" type="button">Get month</button>
+        </div>
+        <small class="hint">
+          Orders only &mdash; stock and cost have no past version, SiteGiant only
+          reports them as they are today.
+        </small>
+      </div>
+
+      <button id="cancel" class="danger" hidden>Stop</button>
+    </section>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <section class="progress">
+      <h2>Progress</h2>
+      <ul id="rows" class="rows"></ul>
+    </section>
+
+    <details id="history-box" class="history">
+      <summary>
+        What you've already fetched <span id="history-count" class="count"></span>
+      </summary>
+      <ul id="history" class="history-list"></ul>
+      <button id="clear-history" class="link" type="button">Clear this list</button>
+    </details>
+
+    <footer>
+      <span id="last-run">No runs yet.</span>
+      <div class="footer-buttons">
+        <button id="open-folder" type="button" title="Open the folder these files were saved in">
+          &#128193; Folder
+        </button>
+        <button
+          id="reload"
+          type="button"
+          title="Restart the extension so edited files take effect — same as the refresh arrow on chrome://extensions"
+        >
+          &#8635;
+        </button>
+        <button id="open-options" type="button" title="Settings">&#9881;</button>
+      </div>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

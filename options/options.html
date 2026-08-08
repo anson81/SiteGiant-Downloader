@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SiteGiant Downloader — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>SiteGiant Downloader</h1>
+      <p class="version">Version <span id="version">…</span></p>
+
+      <section>
+        <h2>ProfitLens</h2>
+
+        <label class="field">
+          <span>ProfitLens address</span>
+          <input id="origin" type="text" placeholder="http://localhost:3000" />
+          <small
+            >Where your files get sent. <code>http://localhost:3000</code> is ProfitLens
+            running on this computer. Change it only once ProfitLens is live on a real
+            web address.</small
+          >
+        </label>
+
+        <label class="check">
+          <input id="push" type="checkbox" />
+          <span>
+            Send files to ProfitLens automatically
+            <small
+              >Turn this off to only save the files to your Downloads folder. They are
+              always saved either way, so nothing is lost if sending fails.</small
+            >
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>Orders</h2>
+
+        <label class="field">
+          <span>How many days of orders to fetch</span>
+          <input id="days" type="number" min="7" max="31" />
+          <small
+            >Minimum 7, maximum 31. <strong>SiteGiant will not export more than about a
+            month at a time</strong> — that is their limit, not this extension's. If you
+            skip a few days, the missed days are picked up automatically. Loading older
+            history needs several runs, a month at a time.</small
+          >
+        </label>
+      </section>
+
+      <section>
+        <h2>Updates</h2>
+        <p id="update-status" class="status">Checking…</p>
+
+        <div class="buttons">
+          <button id="check" type="button">Check for updates</button>
+          <button id="install" type="button" hidden>Install update</button>
+        </div>
+
+        <details>
+          <summary>Where updates come from</summary>
+          <div class="grid">
+            <label class="field">
+              <span>GitHub owner</span>
+              <input id="owner" type="text" />
+            </label>
+            <label class="field">
+              <span>Repository</span>
+              <input id="repo" type="text" />
+            </label>
+            <label class="field">
+              <span>Branch</span>
+              <input id="branch" type="text" />
+            </label>
+          </div>
+        </details>
+
+        <p class="note">
+          Installing an update asks you to pick this extension's folder. That is a one-off,
+          and it is the only way a browser lets an extension write to its own files.
+        </p>
+      </section>
+
+      <div id="saved" class="saved" hidden>Saved</div>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>
