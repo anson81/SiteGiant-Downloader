@@ -319,9 +319,14 @@
       const cell = panel.querySelector(`td.ant-picker-cell[title="${iso}"]`);
       if (cell) {
         if (cell.classList.contains('ant-picker-cell-disabled')) {
-          // Almost always the one-month span limit rather than the date itself.
+          // Two different causes, and the message has to tell them apart or the
+          // user retries something that can never work.
+          const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000);
+          const tooOld = new Date(iso) < ninetyDaysAgo;
           throw new Error(
-            `SiteGiant will not accept ${iso} — an export cannot span more than about a month`
+            tooOld
+              ? `SiteGiant will not export ${iso} — it only keeps about the last 3 months`
+              : `SiteGiant will not accept ${iso} — an export cannot span more than about a month`
           );
         }
         fullClick(cell.querySelector('.ant-picker-cell-inner') || cell);
@@ -394,14 +399,28 @@
     const endInput = modal.querySelector('input[placeholder="End Date" i]');
     if (!startInput || !endInput) throw new Error('Could not find the date fields');
 
-    // One range picker drives both fields: clicking the start opens it, and
-    // choosing a start date moves it on to the end date by itself.
-    fullClick(startInput);
+    /**
+     * END FIRST, then start. This order is not a style choice — it decides
+     * which dates the picker will let you have.
+     *
+     * SiteGiant disables anything more than about a month from whichever end is
+     * already chosen, and with NOTHING chosen it anchors that window near today.
+     * Measured on the live dialog, 2026-08-08:
+     *
+     *   start field focused, nothing chosen   earliest selectable  09 May
+     *   end chosen as 31 May, then start      earliest selectable  01 May
+     *
+     * So choosing the start first makes the first day of an older month
+     * unreachable — asking for May failed on 2026-05-01 while May was in fact
+     * perfectly exportable. Choosing the end first moves the window back with
+     * it, and the start then follows.
+     */
+    fullClick(endInput);
     await waitFor(openPicker, { label: 'the date picker' });
 
-    await pickDateCell(isoDate(new Date(startISO)), startInput);
-    await sleep(400);
     await pickDateCell(isoDate(new Date(endISO)), endInput);
+    await sleep(400);
+    await pickDateCell(isoDate(new Date(startISO)), startInput);
     await sleep(500);
 
     if (!squash(startInput.value) || !squash(endInput.value)) {

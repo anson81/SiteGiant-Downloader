@@ -1,8 +1,10 @@
 {
-    "version":  "1.4.0",
+    "version":  "1.5.1",
     "notes":  [
-                  "Add a history list to the popup showing past runs, newest first, with a month tag on anything fetched for a specific month.",
-                  "Keeps failed runs too - a run that errored is the one you need to see again."
+                  "Choose the END date before the start. SiteGiant disables anything more than about a month from whichever end is already chosen, and with nothing chosen it anchors that window near today - so picking the start first made the first day of an older month unreachable.",
+                  "SiteGiant only keeps about the last 3 months. The month box now refuses older months rather than accepting one and failing mid-run.",
+                  "Move Check and Update into the popup. They belong to the extension, and buried in Settings nobody looked.",
+                  "Keep repo plumbing out of the update file list."
               ],
     "files":  [
                   "background/background.js",

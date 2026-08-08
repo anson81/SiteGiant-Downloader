@@ -47,12 +47,15 @@ if (-not $check.host_permissions -or $check.host_permissions.Count -lt 4) {
 Write-Host "manifest.json: $old -> $Version"
 
 # --- collect the files that make up the extension ---------------------------
+# Only what Chrome actually loads. Repo plumbing (.gitignore, .github) is not
+# part of the extension, and listing it would have the updater download files
+# that do nothing — or 404 for anyone who cloned without them.
 $skip = @('tools', '.git', '.github', 'node_modules')
 $files = Get-ChildItem -Path $root -Recurse -File |
     Where-Object {
         $rel = $_.FullName.Substring($root.Length + 1).Replace('\', '/')
         $top = $rel.Split('/')[0]
-        ($skip -notcontains $top)
+        ($skip -notcontains $top) -and -not $rel.Split('/')[-1].StartsWith('.')
     } |
     ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') } |
     Sort-Object

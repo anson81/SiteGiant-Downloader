@@ -10,9 +10,12 @@
       <span id="version" class="version">v…</span>
     </header>
 
-    <div id="update-bar" class="update-bar" hidden>
-      <span id="update-text"></span>
-      <button id="update-action" hidden>Update</button>
+    <div id="update-bar" class="update-bar">
+      <span id="update-text">Checking for updates…</span>
+      <div class="update-buttons">
+        <button id="check" type="button">Check</button>
+        <button id="update-action" hidden>Update</button>
+      </div>
     </div>
 
     <section class="actions">
@@ -36,8 +39,8 @@
           <button id="run-month" class="ghost" type="button">Get month</button>
         </div>
         <small class="hint">
-          Orders only &mdash; stock and cost have no past version, SiteGiant only
-          reports them as they are today.
+          Orders only &mdash; stock and cost have no past version. SiteGiant keeps
+          about 3 months, so older months cannot be picked.
         </small>
       </div>
 

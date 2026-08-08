@@ -133,11 +133,16 @@ Click the ⚙ button in the popup.
 
 Pick a month, press **Get month**, and it fetches that whole month of orders.
 
-**Any month is reachable.** SiteGiant limits the *length* of an export to about 31
-days, not how far back it will go — confirmed on the live picker: a start of
-2026-05-09 allows end dates up to 2026-06-09 and no further, but the start itself
-can be set to any date. A calendar month is never longer than 31 days, so picking a
-month always fits.
+**SiteGiant keeps about the last 3 months.** Older months cannot be picked at all —
+the month box will not offer them. Measured on the live dialog on 2026-08-08:
+December 2025 through April 2026 were entirely greyed out, May onwards was not.
+
+There are TWO separate limits, and they compound:
+
+| Limit | Effect |
+|---|---|
+| An export may span about **31 days** | a calendar month always fits |
+| Dates older than about **90 days** are gone | roughly 3 months of history exists |
 
 Files are filed under the month they cover:
 
@@ -171,9 +176,15 @@ easy; whether it *should* loop is the open question.
 
 ## Updates
 
-The extension checks for updates by itself. When one is available the popup says
-so — open Settings and click **Install update**. It writes the new files and then
-**restarts itself**, so there is nothing to do on `chrome://extensions`.
+**Check** and **Update** are at the top of the popup. The bar shows the current
+state — up to date, a version available, or a failed check — and **Check** asks
+again on demand.
+
+Pressing **Update** opens the settings page to finish the job. That is a browser
+constraint, not a choice: writing to the extension's own folder needs a directory
+handle from a file picker, and opening a picker closes a popup. It writes the new
+files and then **restarts the extension itself**, so there is nothing to do on
+`chrome://extensions`.
 
 The first time, Chrome asks you to pick the extension folder. That is a one-off,
 and it is the only way a browser will let an extension write to its own folder.
@@ -270,10 +281,16 @@ straight to `/items/batch-edit` sidesteps it.
   Edit list has one, so it is used instead.
 - **The date inputs are `readOnly`.** Typing into them cannot work at any
   format — verified on the live page. The calendar is the only way in, and its
-  cells carry `title="YYYY-MM-DD"`, which is what `pickDateCell()` targets. It
-  is one *range* picker driving both fields: choosing a start date advances it
-  to the end date on its own. Only ~2 months render at a time, so a wide range
-  walks the header arrows first.
+  cells carry `title="YYYY-MM-DD"`, which is what `pickDateCell()` targets.
+  Only ~2 months render at a time, so a wide range walks the header arrows first.
+- **Choose the END date FIRST.** This is not cosmetic — it decides which dates
+  the picker will allow. Anything more than ~31 days from the already-chosen end
+  is disabled, and with nothing chosen that window is anchored near today.
+  Measured 2026-08-08: with the start field focused and nothing selected the
+  earliest selectable date was **09 May**; after choosing 31 May as the end it
+  became **01 May**. Picking the start first therefore makes the first day of an
+  older month unreachable, and asking for May failed on `2026-05-01` while May
+  was in fact perfectly exportable.
 - **Menu items are `<p class="un-dots-option">`, not links or buttons**, and
   the label is split: `<span>Export </span><b><span>Orders</span></b>`. The
   first version searched `a,button,li,div,span` and so never even looked at the

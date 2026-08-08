@@ -208,20 +208,45 @@ async function loadHistory() {
   renderHistory(res?.history ?? []);
 }
 
+/**
+ * The update bar lives here rather than in Settings.
+ *
+ * Checking and installing are things you do to the extension, and the extension
+ * is this popup — burying them a page deep meant nobody looked.
+ *
+ * Installing still opens the options page: writing to the extension's own folder
+ * needs a directory handle from a file picker, and opening a picker closes a
+ * popup. So the button starts the job in a place that can finish it.
+ */
 function renderUpdate(info) {
-  if (!info) return;
   const bar = $('update-bar');
   const text = $('update-text');
   const action = $('update-action');
 
+  if (!info) {
+    text.textContent = 'Updates not checked yet';
+    action.hidden = true;
+    bar.classList.remove('available');
+    return;
+  }
+
+  if (info.error) {
+    text.textContent = `Could not check: ${info.error}`;
+    action.hidden = true;
+    bar.classList.remove('available');
+    return;
+  }
+
   if (info.available) {
-    bar.hidden = false;
     text.textContent = `Version ${info.latest} is available`;
     action.hidden = false;
-  } else {
-    bar.hidden = true;
-    action.hidden = true;
+    bar.classList.add('available');
+    return;
   }
+
+  text.textContent = `Up to date (v${info.current})`;
+  action.hidden = true;
+  bar.classList.remove('available');
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -233,6 +258,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   $('month').value = `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}`;
   $('month').max = thisMonth();
+
+  /**
+   * SiteGiant keeps roughly the last 90 days. A month is only fully exportable
+   * if its LAST day still falls inside that window, so the floor is the month
+   * containing today-90 — about three months back.
+   *
+   * Set as the input's own minimum so an impossible month cannot be chosen at
+   * all, rather than being accepted and failing halfway through a run.
+   */
+  const floor = new Date(now.getTime() - 90 * 86400000);
+  $('month').min = `${floor.getFullYear()}-${String(floor.getMonth() + 1).padStart(2, '0')}`;
 
   $('run-all').addEventListener('click', () => run(['orders', 'stockcost']));
   $('run-orders').addEventListener('click', () => run(['orders']));
@@ -254,6 +290,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   $('open-folder').addEventListener('click', () => send({ type: 'openFolder' }));
   $('open-options').addEventListener('click', () => send({ type: 'openOptions' }));
+
+  $('check').addEventListener('click', async () => {
+    $('update-text').textContent = 'Checking…';
+    renderUpdate(await send({ type: 'checkUpdate' }));
+  });
+
+  // Hands off to the options page, which is the only place a folder picker can
+  // be opened without the window closing under it.
   $('update-action').addEventListener('click', () => send({ type: 'openOptions' }));
 
   refresh();
