@@ -260,15 +260,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('month').max = thisMonth();
 
   /**
-   * SiteGiant keeps roughly the last 90 days. A month is only fully exportable
-   * if its LAST day still falls inside that window, so the floor is the month
-   * containing today-90 — about three months back.
+   * No floor. An earlier version capped this at today-90, on the belief that
+   * SiteGiant discarded anything older — it does not. Its picker only refuses
+   * dates more than ~31 days from whatever is already chosen, and that window
+   * ratchets backwards with every pick, so the content script can walk to any
+   * month. Capping it here blocked months that were perfectly exportable.
    *
-   * Set as the input's own minimum so an impossible month cannot be chosen at
-   * all, rather than being accepted and failing halfway through a run.
+   * How far back real data goes is SiteGiant's business, and the run reports it
+   * honestly if a month turns out to be empty.
    */
-  const floor = new Date(now.getTime() - 90 * 86400000);
-  $('month').min = `${floor.getFullYear()}-${String(floor.getMonth() + 1).padStart(2, '0')}`;
+  $('month').removeAttribute('min');
 
   $('run-all').addEventListener('click', () => run(['orders', 'stockcost']));
   $('run-orders').addEventListener('click', () => run(['orders']));

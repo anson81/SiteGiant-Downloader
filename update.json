@@ -1,9 +1,8 @@
 {
-    "version":  "1.5.2",
+    "version":  "1.6.0",
     "notes":  [
-                  "Remember the extension folder, so updating stops asking for it every time. A directory handle is not JSON, so it lives in IndexedDB rather than chrome.storage - the first version simply never stored it.",
-                  "Check the chosen folder really is this extension by reading its manifest, rather than writing into whatever was picked.",
-                  "Cancelling the folder picker now reads as cancelled, not failed."
+                  "Walk the date picker back to reach any month. SiteGiant only refuses dates more than about 31 days from whatever is already chosen, and that window ratchets - so taking the earliest date offered drags it back and repeating reaches anything.",
+                  "Remove the 3-month limit on the month box. It was wrong and blocked months that were perfectly exportable."
               ],
     "files":  [
                   "background/background.js",

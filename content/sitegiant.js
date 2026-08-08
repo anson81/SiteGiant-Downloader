@@ -285,6 +285,49 @@
     return cell && cell.title ? cell.title.slice(0, 7) : null;
   }
 
+  /**
+   * The cell for a date, once the calendar has been walked to it. Null when the
+   * date is outside what the picker will currently allow.
+   */
+  async function reachCell(iso, input) {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const panel = await ensurePickerOpen(input);
+      const cell = panel.querySelector(`td.ant-picker-cell[title="${iso}"]`);
+      if (cell) return cell;
+
+      const shownMonth = displayedMonth(panel);
+      if (!shownMonth) return null;
+      if (`${shownMonth}-01` === `${iso.slice(0, 7)}-01`) return null;
+
+      const diff = monthsBetween(`${shownMonth}-01`, iso);
+      const back = diff < 0;
+      const magnitude = Math.abs(diff);
+      const button = panel.querySelector(
+        magnitude >= 12
+          ? back
+            ? '.ant-picker-header-super-prev-btn'
+            : '.ant-picker-header-super-next-btn'
+          : back
+            ? '.ant-picker-header-prev-btn'
+            : '.ant-picker-header-next-btn'
+      );
+      if (!button) return null;
+      fullClick(button);
+      await sleep(220);
+    }
+    return null;
+  }
+
+  /** The earliest date the picker is currently willing to accept. */
+  function earliestOffered(panel) {
+    const open = Array.from(panel.querySelectorAll('td.ant-picker-cell-in-view'))
+      .filter((c) => !c.classList.contains('ant-picker-cell-disabled'))
+      .map((c) => c.title)
+      .filter(Boolean)
+      .sort();
+    return open[0] ?? null;
+  }
+
   async function ensurePickerOpen(input) {
     const open = openPicker();
     if (open) return open;
@@ -319,15 +362,11 @@
       const cell = panel.querySelector(`td.ant-picker-cell[title="${iso}"]`);
       if (cell) {
         if (cell.classList.contains('ant-picker-cell-disabled')) {
-          // Two different causes, and the message has to tell them apart or the
-          // user retries something that can never work.
-          const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000);
-          const tooOld = new Date(iso) < ninetyDaysAgo;
-          throw new Error(
-            tooOld
-              ? `SiteGiant will not export ${iso} — it only keeps about the last 3 months`
-              : `SiteGiant will not accept ${iso} — an export cannot span more than about a month`
-          );
+          // Reaching an out-of-window date is pickRange's job, so being refused
+          // here means the ratchet did not get far enough — not that the date is
+          // unavailable. Say that, rather than blaming a retention limit that
+          // does not exist.
+          throw new Error(`SiteGiant would not accept ${iso} as a date`);
         }
         fullClick(cell.querySelector('.ant-picker-cell-inner') || cell);
         return true;
@@ -360,6 +399,65 @@
       await sleep(220);
     }
     throw new Error(`Could not reach ${iso} in the calendar`);
+  }
+
+  /**
+   * Sets both dates, walking the picker back when the target is out of reach.
+   *
+   * SiteGiant allows a date only within ~31 days of whatever is already chosen,
+   * and with NOTHING chosen it anchors that window near today. Naively picking
+   * the target start first therefore fails on anything older than about three
+   * months — which is what made a request for May die on 2026-05-01.
+   *
+   * But the window RATCHETS: every pick re-anchors it to the other field, so
+   * taking the earliest date on offer drags the whole window back ~31 days, and
+   * repeating that reaches any date. Measured on the live dialog 2026-08-08:
+   *
+   *   end := 09 May (earliest first pick)  ->  start could then reach 07 Apr
+   *   start := 07 Apr                      ->  end could then reach   08 Apr
+   *   end := 08 Apr                        ->  start could then reach 01 Apr
+   *
+   * Anson worked this out by hand before the code did. The loop below is that
+   * same manoeuvre: reach for the target, and if it is refused, take the
+   * earliest date offered and try again from there.
+   */
+  async function pickRange(startISO, endISO, startInput, endInput) {
+    fullClick(endInput);
+    await waitFor(openPicker, { label: 'the date picker' });
+
+    // Phase one: get the END onto the date we actually want.
+    let input = endInput;
+    let placed = false;
+
+    for (let step = 0; step < 20; step += 1) {
+      const cell = await reachCell(endISO, input);
+      if (cell && !cell.classList.contains('ant-picker-cell-disabled')) {
+        fullClick(cell.querySelector('.ant-picker-cell-inner') || cell);
+        await sleep(500);
+        placed = true;
+        break;
+      }
+
+      // Out of reach. Take the earliest date on offer to drag the window back,
+      // then continue from whichever field the picker moves to.
+      const panel = await ensurePickerOpen(input);
+      const earliest = earliestOffered(panel);
+      if (!earliest || earliest <= endISO) {
+        throw new Error(`SiteGiant will not offer any date near ${endISO}`);
+      }
+      await pickDateCell(earliest, input);
+      await sleep(450);
+
+      input = input === endInput ? startInput : endInput;
+      fullClick(input);
+      await sleep(400);
+    }
+
+    if (!placed) throw new Error(`Could not set the end date to ${endISO}`);
+
+    // Phase two: the start is within a month of the end, so it is now reachable.
+    await pickDateCell(startISO, startInput);
+    await sleep(500);
   }
 
   async function ordersSubmit({ startISO, endISO }) {
@@ -399,29 +497,7 @@
     const endInput = modal.querySelector('input[placeholder="End Date" i]');
     if (!startInput || !endInput) throw new Error('Could not find the date fields');
 
-    /**
-     * END FIRST, then start. This order is not a style choice — it decides
-     * which dates the picker will let you have.
-     *
-     * SiteGiant disables anything more than about a month from whichever end is
-     * already chosen, and with NOTHING chosen it anchors that window near today.
-     * Measured on the live dialog, 2026-08-08:
-     *
-     *   start field focused, nothing chosen   earliest selectable  09 May
-     *   end chosen as 31 May, then start      earliest selectable  01 May
-     *
-     * So choosing the start first makes the first day of an older month
-     * unreachable — asking for May failed on 2026-05-01 while May was in fact
-     * perfectly exportable. Choosing the end first moves the window back with
-     * it, and the start then follows.
-     */
-    fullClick(endInput);
-    await waitFor(openPicker, { label: 'the date picker' });
-
-    await pickDateCell(isoDate(new Date(endISO)), endInput);
-    await sleep(400);
-    await pickDateCell(isoDate(new Date(startISO)), startInput);
-    await sleep(500);
+    await pickRange(isoDate(new Date(startISO)), isoDate(new Date(endISO)), startInput, endInput);
 
     if (!squash(startInput.value) || !squash(endInput.value)) {
       throw new Error('The dates did not stick — SiteGiant may have changed its date picker');

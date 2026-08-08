@@ -133,16 +133,23 @@ Click the ⚙ button in the popup.
 
 Pick a month, press **Get month**, and it fetches that whole month of orders.
 
-**SiteGiant keeps about the last 3 months.** Older months cannot be picked at all —
-the month box will not offer them. Measured on the live dialog on 2026-08-08:
-December 2025 through April 2026 were entirely greyed out, May onwards was not.
+**Any month is reachable**, however far back — the picker just has to be walked
+there, which the extension does for you.
 
-There are TWO separate limits, and they compound:
+SiteGiant refuses a date more than about **31 days from whatever is already
+chosen**, and with nothing chosen it anchors that window near today. That makes an
+older month *look* unavailable. It is not: every pick re-anchors the window, so
+taking the earliest date on offer drags it back ~31 days, and repeating that
+reaches anything. Measured on the live dialog, 2026-08-08:
 
-| Limit | Effect |
-|---|---|
-| An export may span about **31 days** | a calendar month always fits |
-| Dates older than about **90 days** are gone | roughly 3 months of history exists |
+```
+end := 09 May (earliest first pick)  →  start could then reach  07 Apr
+start := 07 Apr                      →  end could then reach    08 Apr
+end := 08 Apr                        →  start could then reach  01 Apr
+```
+
+An older month therefore takes a few seconds longer, because the picker is being
+stepped backwards before the real dates go in.
 
 Files are filed under the month they cover:
 
@@ -291,14 +298,15 @@ straight to `/items/batch-edit` sidesteps it.
   format — verified on the live page. The calendar is the only way in, and its
   cells carry `title="YYYY-MM-DD"`, which is what `pickDateCell()` targets.
   Only ~2 months render at a time, so a wide range walks the header arrows first.
-- **Choose the END date FIRST.** This is not cosmetic — it decides which dates
-  the picker will allow. Anything more than ~31 days from the already-chosen end
-  is disabled, and with nothing chosen that window is anchored near today.
-  Measured 2026-08-08: with the start field focused and nothing selected the
-  earliest selectable date was **09 May**; after choosing 31 May as the end it
-  became **01 May**. Picking the start first therefore makes the first day of an
-  older month unreachable, and asking for May failed on `2026-05-01` while May
-  was in fact perfectly exportable.
+- **The allowed window RATCHETS, and `pickRange()` exploits it.** A date is only
+  accepted within ~31 days of whatever is already chosen, and with nothing chosen
+  that window sits near today. But each pick re-anchors it to the other field, so
+  taking the earliest date offered drags the window back ~31 days — repeat and
+  any date is reachable. Choosing the END first matters for the same reason.
+  Two wrong conclusions were drawn before this was understood: first that only
+  the *length* of an export was capped, then that SiteGiant discarded anything
+  older than 90 days. Neither is true, and the second wrongly blocked months in
+  the popup that were perfectly exportable.
 - **Menu items are `<p class="un-dots-option">`, not links or buttons**, and
   the label is split: `<span>Export </span><b><span>Orders</span></b>`. The
   first version searched `a,button,li,div,span` and so never even looked at the
