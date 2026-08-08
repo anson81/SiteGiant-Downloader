@@ -313,8 +313,18 @@ straight to `/items/batch-edit` sidesteps it.
     after every pick, so reading "the earliest date offered" without scrolling
     first describes the wrong months — that is how `01-08` reached the start box
     while reaching for April.
+  - *A distant month offers NOTHING to stand on.* Scrolling to March showed March
+    and April both entirely greyed. `earliestReachable()` therefore walks FORWARD
+    from the target until it finds a month with a selectable date, and takes that
+    as the stepping stone.
+  - *Stop when nothing moves.* Once the earliest date on offer is the one already
+    in the box, every further pass repeats itself. Without a check on whether the
+    fields actually changed, the walk spins forever — seen live reaching for
+    December from a settled March.
 
-  Proven on the live dialog: April lands in 4 picks, March in 3 more.
+  Verified on the live dialog: April and March both land from a cold start.
+  How far back SiteGiant will really go is its own business; the walk now says so
+  plainly instead of hanging.
 - **Menu items are `<p class="un-dots-option">`, not links or buttons**, and
   the label is split: `<span>Export </span><b><span>Orders</span></b>`. The
   first version searched `a,button,li,div,span` and so never even looked at the

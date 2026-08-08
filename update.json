@@ -1,7 +1,8 @@
 {
-    "version":  "1.6.2",
+    "version":  "1.7.0",
     "notes":  [
-                  "Rewrite the date walk against what the picker actually does, tested live rather than reasoned about. The start now moves before the end, every field is clicked before it is set, and the calendar is re-scrolled to the target month each time because it jumps back to today after every pick."
+                  "Reach any month, not just recent ones. A month more than about 31 days back offers no selectable date at all, so the walk now scrolls forward to find the nearest month that does and uses that as a stepping stone.",
+                  "Stop instead of hanging when the dates will not move any further back."
               ],
     "files":  [
                   "background/background.js",

@@ -339,6 +339,32 @@
     return true;
   }
 
+  /**
+   * The earliest date this field will accept at or after a target month.
+   *
+   * Scrolling to the target month is not enough on its own: for anything more
+   * than a month or so back, EVERY cell there is disabled and there is nothing
+   * to take. Asking for March showed March and April both entirely greyed, and
+   * the walk gave up. So when the target month offers nothing, this walks
+   * FORWARD until it finds the nearest month that does — that date is the
+   * stepping stone which drags the window back.
+   */
+  async function earliestReachable(input, month) {
+    let panel = await openFieldAt(input, month);
+
+    for (let attempt = 0; attempt < 16 && panel; attempt += 1) {
+      const offered = earliestOffered(panel);
+      if (offered) return offered;
+
+      const next = panel.querySelector('.ant-picker-header-next-btn');
+      if (!next) return null;
+      fullClick(next);
+      await sleep(190);
+      panel = openPicker();
+    }
+    return null;
+  }
+
   /** The earliest date the picker is currently willing to accept. */
   function earliestOffered(panel) {
     const open = Array.from(panel.querySelectorAll('td.ant-picker-cell-in-view'))
@@ -372,35 +398,43 @@
    */
   async function pickRange(startISO, endISO, startInput, endInput) {
     const targetMonth = endISO.slice(0, 7);
+    const fields = () => `${squash(startInput.value)}|${squash(endInput.value)}`;
     let placed = false;
 
-    for (let step = 0; step < 15; step += 1) {
+    for (let step = 0; step < 40; step += 1) {
+      const before = fields();
+
       // START MOVES FIRST. The end can never precede the start, so from a
       // settled range both fields refuse an earlier date until the start gives
-      // way: with 01-04 → 30-04 on screen, asking for 31-03 as the end was
-      // refused, and so was 01-03 as the start.
-      const startPanel = await openFieldAt(startInput, targetMonth);
-      const stone = earliestOffered(startPanel);
-      if (stone) {
-        await takeCell(startPanel, stone);
+      // way: with 01-04 → 30-04 on screen, 31-03 was refused as an end AND
+      // 01-03 as a start.
+      const startStone = await earliestReachable(startInput, targetMonth);
+      if (startStone) {
+        const panel = await openFieldAt(startInput, startStone.slice(0, 7));
+        await takeCell(panel, startStone);
       }
 
-      // With the start dragged back, the end can follow.
-      const endPanel = await openFieldAt(endInput, targetMonth);
+      // With the start dragged back, try for the end we actually want.
+      let endPanel = await openFieldAt(endInput, targetMonth);
       if (await takeCell(endPanel, endISO)) {
         placed = true;
         break;
       }
 
-      // Still out of reach — take whatever the end will accept and go round
-      // again. Refuse to move forwards, or a reset calendar sends us to today:
-      // reading the panel before navigating once put 01-08 in the start box.
-      const endStone = earliestOffered(endPanel);
-      if (!endStone || (stone && endStone > stone && endStone > endISO && step > 0)) {
-        throw new Error(`SiteGiant would not offer a date near ${endISO}`);
+      // Not yet — pull the end back as far as it will go and try again.
+      const endStone = await earliestReachable(endInput, targetMonth);
+      if (endStone) {
+        endPanel = await openFieldAt(endInput, endStone.slice(0, 7));
+        await takeCell(endPanel, endStone);
       }
-      if (!(await takeCell(endPanel, endStone))) {
-        throw new Error(`SiteGiant would not offer a date near ${endISO}`);
+
+      // Nothing moved. Without this the walk spins forever: once the earliest
+      // date on offer is the one already in the box, every further pass repeats
+      // itself. Seen live reaching for December from a settled March.
+      if (fields() === before) {
+        throw new Error(
+          `SiteGiant stopped letting the dates move back — ${endISO} is as far as it will go`
+        );
       }
     }
 
