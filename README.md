@@ -178,9 +178,10 @@ so — open Settings and click **Install update**. It writes the new files and t
 The first time, Chrome asks you to pick the extension folder. That is a one-off,
 and it is the only way a browser will let an extension write to its own folder.
 
-> **The updater needs a GitHub repo to read from**, and
-> `github.com/anson81/SiteGiant-Downloader` does not exist yet. Until it does,
-> **Install update** has nothing to fetch. Everything else works without it.
+Updates are read from
+[`anson81/SiteGiant-Downloader`](https://github.com/anson81/SiteGiant-Downloader).
+The repo is public because `raw.githubusercontent.com` is fetched without
+credentials — a private repo would return 404 to the updater.
 
 ### The ↻ button
 
