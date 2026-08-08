@@ -1,8 +1,8 @@
 {
-    "version":  "1.6.0",
+    "version":  "1.6.1",
     "notes":  [
-                  "Walk the date picker back to reach any month. SiteGiant only refuses dates more than about 31 days from whatever is already chosen, and that window ratchets - so taking the earliest date offered drags it back and repeating reaches anything.",
-                  "Remove the 3-month limit on the month box. It was wrong and blocked months that were perfectly exportable."
+                  "Fix the end date landing in the start box. The ratchet let the picker choose which field was active after each pick, and it moved on to the start - so asking for April set 30-04 as the START and 09-05 as the end, then failed.",
+                  "Show whether the extension folder is remembered, with buttons to choose or forget it. Previously there was no way to tell without running an update."
               ],
     "files":  [
                   "background/background.js",

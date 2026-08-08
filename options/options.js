@@ -142,9 +142,66 @@ async function isExtensionFolder(handle) {
 }
 
 /**
+ * Says whether the folder is remembered, so "will it ask me again?" is
+ * answerable without running an update to find out.
+ */
+async function refreshFolderStatus() {
+  const status = $('folder-status');
+  const forget = $('forget-folder');
+  const pick = $('pick-folder');
+
+  const handle = await idbGet(HANDLE_KEY);
+  if (!handle) {
+    status.textContent = 'Extension folder: not chosen yet — you will be asked once.';
+    forget.hidden = true;
+    pick.textContent = 'Choose the extension folder…';
+    return null;
+  }
+
+  const granted = await ensureWritable(handle, false);
+  status.textContent = granted
+    ? `Extension folder: remembered (${handle.name}). You will not be asked again.`
+    : `Extension folder: remembered (${handle.name}), but Chrome will ask you to confirm on the next write.`;
+  forget.hidden = false;
+  pick.textContent = 'Choose a different folder…';
+  return handle;
+}
+
+/**
+ * Asks for the folder. Must run straight from a click — the directory picker
+ * needs user activation, which is why this is its own button rather than
+ * something the install path does several awaits deep.
+ */
+async function requestFolder() {
+  const status = $('folder-status');
+  if (!window.showDirectoryPicker) {
+    status.textContent = 'This Chrome has no directory picker.';
+    return null;
+  }
+
+  let chosen;
+  try {
+    chosen = await window.showDirectoryPicker({ mode: 'readwrite' });
+  } catch {
+    return null; // cancelled
+  }
+
+  if (!(await isExtensionFolder(chosen))) {
+    status.textContent = 'That is not this extension’s folder — look for the one holding manifest.json.';
+    return null;
+  }
+  if (!(await ensureWritable(chosen, true))) {
+    status.textContent = 'Write permission was declined.';
+    return null;
+  }
+
+  await idbSet(HANDLE_KEY, chosen);
+  await refreshFolderStatus();
+  return chosen;
+}
+
+/**
  * The folder to write into: remembered if possible, chosen if not.
- *
- * Returns null when the user cancels the picker.
  */
 async function extensionFolder(status) {
   const remembered = await idbGet(HANDLE_KEY);
@@ -155,15 +212,12 @@ async function extensionFolder(status) {
     }
     // Stale or wrong — forget it rather than asking about it again next time.
     await idbDelete(HANDLE_KEY);
+    await refreshFolderStatus();
   }
 
   status.textContent = 'Choose this extension’s folder — just this once…';
-  const chosen = await window.showDirectoryPicker({ mode: 'readwrite' });
-
-  if (!(await isExtensionFolder(chosen))) {
-    throw new Error('That folder is not this extension — look for the one holding manifest.json');
-  }
-  await idbSet(HANDLE_KEY, chosen);
+  const chosen = await requestFolder();
+  if (!chosen) throw new Error('No folder chosen, so nothing was written.');
   return chosen;
 }
 
@@ -261,6 +315,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderUpdate(await send({ type: 'checkUpdate' }));
   });
   $('install').addEventListener('click', install);
+  $('pick-folder').addEventListener('click', requestFolder);
+  $('forget-folder').addEventListener('click', async () => {
+    await idbDelete(HANDLE_KEY);
+    await refreshFolderStatus();
+  });
+  await refreshFolderStatus();
 
   const { updateInfo } = await chrome.storage.local.get('updateInfo');
   renderUpdate(updateInfo);

@@ -425,12 +425,17 @@
     fullClick(endInput);
     await waitFor(openPicker, { label: 'the date picker' });
 
-    // Phase one: get the END onto the date we actually want.
-    let input = endInput;
     let placed = false;
 
     for (let step = 0; step < 20; step += 1) {
-      const cell = await reachCell(endISO, input);
+      // ALWAYS re-focus the end field before reaching for the end date. An
+      // earlier version let the picker decide which field was active after each
+      // pick, and it moved on to the start — so the END date got typed into the
+      // START box. Asking for April produced 30-04 → 09-05 and then failed.
+      fullClick(endInput);
+      await sleep(350);
+
+      const cell = await reachCell(endISO, endInput);
       if (cell && !cell.classList.contains('ant-picker-cell-disabled')) {
         fullClick(cell.querySelector('.ant-picker-cell-inner') || cell);
         await sleep(500);
@@ -438,24 +443,33 @@
         break;
       }
 
-      // Out of reach. Take the earliest date on offer to drag the window back,
-      // then continue from whichever field the picker moves to.
-      const panel = await ensurePickerOpen(input);
-      const earliest = earliestOffered(panel);
-      if (!earliest || earliest <= endISO) {
+      // Out of reach. Drag the window back one notch: take the earliest date
+      // the END will accept, then the earliest the START will accept. The
+      // second of those re-anchors the end's window further back still, which
+      // is what makes the next attempt reach further.
+      const endPanel = await ensurePickerOpen(endInput);
+      const earliestEnd = earliestOffered(endPanel);
+      if (!earliestEnd || earliestEnd <= endISO) {
         throw new Error(`SiteGiant will not offer any date near ${endISO}`);
       }
-      await pickDateCell(earliest, input);
+      await pickDateCell(earliestEnd, endInput);
       await sleep(450);
 
-      input = input === endInput ? startInput : endInput;
-      fullClick(input);
-      await sleep(400);
+      fullClick(startInput);
+      await sleep(350);
+      const startPanel = await ensurePickerOpen(startInput);
+      const earliestStart = earliestOffered(startPanel);
+      if (earliestStart) {
+        await pickDateCell(earliestStart, startInput);
+        await sleep(450);
+      }
     }
 
     if (!placed) throw new Error(`Could not set the end date to ${endISO}`);
 
-    // Phase two: the start is within a month of the end, so it is now reachable.
+    // The start is within a month of the end now, so it goes straight in.
+    fullClick(startInput);
+    await sleep(350);
     await pickDateCell(startISO, startInput);
     await sleep(500);
   }
