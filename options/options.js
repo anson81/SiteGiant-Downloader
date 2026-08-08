@@ -64,10 +64,114 @@ function renderUpdate(info) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Remembering the extension folder.
+ *
+ * A directory handle is structured-clonable but NOT JSON — chrome.storage
+ * cannot hold one, so it goes in IndexedDB. Without this the picker opens on
+ * every single update, which is what the first version did.
+ *
+ * Chrome may still ask to confirm the permission after a restart. That prompt
+ * is one click, not a folder hunt, and it is not something an extension can
+ * waive.
+ * ------------------------------------------------------------------ */
+const DB_NAME = 'sitegiant-downloader';
+const STORE = 'handles';
+const HANDLE_KEY = 'extensionDir';
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSet(key, value) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGet(key) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDelete(key) {
+  const db = await openDb();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(key);
+    tx.oncomplete = () => resolve();
+  });
+}
+
+/** Asks only if we do not already hold write permission. */
+async function ensureWritable(handle, mayPrompt) {
+  const opts = { mode: 'readwrite' };
+  if ((await handle.queryPermission(opts)) === 'granted') return true;
+  if (!mayPrompt) return false;
+  return (await handle.requestPermission(opts)) === 'granted';
+}
+
+/**
+ * Is this actually the extension's own folder?
+ *
+ * A remembered handle could point anywhere if the folder was moved or the wrong
+ * one was chosen, and writing a manifest into someone's Documents would be a
+ * miserable thing to debug. Reading our own manifest proves it.
+ */
+async function isExtensionFolder(handle) {
+  try {
+    const file = await (await handle.getFileHandle('manifest.json')).getFile();
+    const json = JSON.parse(await file.text());
+    return json?.name === chrome.runtime.getManifest().name;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The folder to write into: remembered if possible, chosen if not.
+ *
+ * Returns null when the user cancels the picker.
+ */
+async function extensionFolder(status) {
+  const remembered = await idbGet(HANDLE_KEY);
+
+  if (remembered) {
+    if ((await ensureWritable(remembered, true)) && (await isExtensionFolder(remembered))) {
+      return remembered;
+    }
+    // Stale or wrong — forget it rather than asking about it again next time.
+    await idbDelete(HANDLE_KEY);
+  }
+
+  status.textContent = 'Choose this extension’s folder — just this once…';
+  const chosen = await window.showDirectoryPicker({ mode: 'readwrite' });
+
+  if (!(await isExtensionFolder(chosen))) {
+    throw new Error('That folder is not this extension — look for the one holding manifest.json');
+  }
+  await idbSet(HANDLE_KEY, chosen);
+  return chosen;
+}
+
+/* ------------------------------------------------------------------ *
  * Installing an update.
  *
  * Fetches every file listed in the remote update.json and writes it into the
- * folder the user picks. manifest.json is written LAST, so a half-finished
+ * extension's own folder. manifest.json is written LAST, so a half-finished
  * download cannot leave the extension claiming a version it does not have.
  * ------------------------------------------------------------------ */
 async function install() {
@@ -90,8 +194,7 @@ async function install() {
     if (!listRes.ok) throw new Error(`Could not read update.json (HTTP ${listRes.status})`);
     const remote = await listRes.json();
 
-    status.textContent = 'Choose this extension’s folder…';
-    const root = await window.showDirectoryPicker({ mode: 'readwrite' });
+    const root = await extensionFolder(status);
 
     const files = (remote.files || []).filter((f) => f !== 'manifest.json');
     files.push('manifest.json');
@@ -127,7 +230,12 @@ async function install() {
     await chrome.storage.local.remove('updateInfo');
     setTimeout(() => chrome.runtime.reload(), 800);
   } catch (err) {
-    status.textContent = `Update failed: ${err?.message || err}`;
+    // Cancelling the picker is a decision, not a failure, and Chrome's own
+    // wording for it ("The user aborted a request") reads like a fault.
+    status.textContent =
+      err?.name === 'AbortError'
+        ? 'Update cancelled — nothing was changed.'
+        : `Update failed: ${err?.message || err}`;
   } finally {
     button.disabled = false;
   }

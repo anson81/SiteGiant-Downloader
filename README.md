@@ -186,8 +186,16 @@ handle from a file picker, and opening a picker closes a popup. It writes the ne
 files and then **restarts the extension itself**, so there is nothing to do on
 `chrome://extensions`.
 
-The first time, Chrome asks you to pick the extension folder. That is a one-off,
-and it is the only way a browser will let an extension write to its own folder.
+The first time, Chrome asks you to pick the extension folder. **Only the first
+time** — the folder is remembered afterwards.
+
+Chrome may still ask you to *confirm* that permission after a browser restart.
+That is one click, not a folder hunt, and no extension can waive it.
+
+If the extension folder is ever moved, the remembered one stops matching and you
+will be asked to pick it again. It checks the folder really is this extension —
+by reading the `manifest.json` inside it — rather than writing into whatever was
+selected.
 
 Updates are read from
 [`anson81/SiteGiant-Downloader`](https://github.com/anson81/SiteGiant-Downloader).

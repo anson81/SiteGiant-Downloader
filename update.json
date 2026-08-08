@@ -1,10 +1,9 @@
 {
-    "version":  "1.5.1",
+    "version":  "1.5.2",
     "notes":  [
-                  "Choose the END date before the start. SiteGiant disables anything more than about a month from whichever end is already chosen, and with nothing chosen it anchors that window near today - so picking the start first made the first day of an older month unreachable.",
-                  "SiteGiant only keeps about the last 3 months. The month box now refuses older months rather than accepting one and failing mid-run.",
-                  "Move Check and Update into the popup. They belong to the extension, and buried in Settings nobody looked.",
-                  "Keep repo plumbing out of the update file list."
+                  "Remember the extension folder, so updating stops asking for it every time. A directory handle is not JSON, so it lives in IndexedDB rather than chrome.storage - the first version simply never stored it.",
+                  "Check the chosen folder really is this extension by reading its manifest, rather than writing into whatever was picked.",
+                  "Cancelling the folder picker now reads as cancelled, not failed."
               ],
     "files":  [
                   "background/background.js",
