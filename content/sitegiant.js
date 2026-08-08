@@ -285,21 +285,16 @@
     return cell && cell.title ? cell.title.slice(0, 7) : null;
   }
 
-  /**
-   * The cell for a date, once the calendar has been walked to it. Null when the
-   * date is outside what the picker will currently allow.
-   */
-  async function reachCell(iso, input) {
+  /** Scrolls the open calendar to a given YYYY-MM. */
+  async function scrollToMonth(month) {
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const panel = await ensurePickerOpen(input);
-      const cell = panel.querySelector(`td.ant-picker-cell[title="${iso}"]`);
-      if (cell) return cell;
+      const panel = openPicker();
+      if (!panel) return null;
 
       const shownMonth = displayedMonth(panel);
-      if (!shownMonth) return null;
-      if (`${shownMonth}-01` === `${iso.slice(0, 7)}-01`) return null;
+      if (!shownMonth || shownMonth === month) return panel;
 
-      const diff = monthsBetween(`${shownMonth}-01`, iso);
+      const diff = monthsBetween(`${shownMonth}-01`, `${month}-01`);
       const back = diff < 0;
       const magnitude = Math.abs(diff);
       const button = panel.querySelector(
@@ -311,11 +306,37 @@
             ? '.ant-picker-header-prev-btn'
             : '.ant-picker-header-next-btn'
       );
-      if (!button) return null;
+      if (!button) return panel;
       fullClick(button);
-      await sleep(220);
+      await sleep(210);
     }
-    return null;
+    return openPicker();
+  }
+
+  /**
+   * Focuses a field and scrolls the calendar to a month.
+   *
+   * Both halves matter. The field must be clicked because the picker decides
+   * for itself which one a pick lands in otherwise — that is how the END date
+   * once ended up in the START box. And the month must be re-scrolled every
+   * time because the calendar jumps back to TODAY after every pick, so anything
+   * read without scrolling first describes the wrong months.
+   */
+  async function openFieldAt(input, month) {
+    fullClick(input);
+    await waitFor(openPicker, { timeout: 5000, label: 'the date picker' });
+    await sleep(300);
+    return scrollToMonth(month);
+  }
+
+  /** Takes a date if the picker allows it. Returns false if it is refused. */
+  async function takeCell(panel, iso) {
+    if (!panel) return false;
+    const cell = panel.querySelector(`td.ant-picker-cell[title="${iso}"]`);
+    if (!cell || cell.classList.contains('ant-picker-cell-disabled')) return false;
+    fullClick(cell.querySelector('.ant-picker-cell-inner') || cell);
+    await sleep(600);
+    return true;
   }
 
   /** The earliest date the picker is currently willing to accept. */
@@ -328,78 +349,6 @@
     return open[0] ?? null;
   }
 
-  async function ensurePickerOpen(input) {
-    const open = openPicker();
-    if (open) return open;
-    fullClick(input);
-    return waitFor(openPicker, { timeout: 5000, label: 'the date picker' });
-  }
-
-  /**
-   * Picks a day out of the calendar.
-   *
-   * Typing is not an option: both date inputs are `readOnly`, so no amount of
-   * value-setting or key events will move them. The calendar is the only way
-   * in — and its cells carry `title="YYYY-MM-DD"`, which is a far better
-   * target than positions or day numbers.
-   *
-   * Two things learned trying to reach a date a year back:
-   *
-   *  - **Jump by year when the target is far away.** The header has four
-   *    arrows: « ‹ … › ». Walking a year one month at a time is twelve presses
-   *    and twelve chances for the picker to close. Note that a comma selector
-   *    would NOT do this: `querySelector('.prev, .super-prev')` returns
-   *    whichever comes first in the DOM, which is the year arrow — so asking
-   *    for months would silently jump years.
-   *  - **Reopen rather than give up.** The picker sometimes closes mid-walk.
-   *    That is recoverable: clicking the field opens it again on the month it
-   *    was showing.
-   */
-  async function pickDateCell(iso, input) {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const panel = await ensurePickerOpen(input);
-
-      const cell = panel.querySelector(`td.ant-picker-cell[title="${iso}"]`);
-      if (cell) {
-        if (cell.classList.contains('ant-picker-cell-disabled')) {
-          // Reaching an out-of-window date is pickRange's job, so being refused
-          // here means the ratchet did not get far enough — not that the date is
-          // unavailable. Say that, rather than blaming a retention limit that
-          // does not exist.
-          throw new Error(`SiteGiant would not accept ${iso} as a date`);
-        }
-        fullClick(cell.querySelector('.ant-picker-cell-inner') || cell);
-        return true;
-      }
-
-      // Measure from the month actually on display, not from the first cell in
-      // the grid. The grid starts with trailing days of the PREVIOUS month — on
-      // an August panel the first cell is 27 July — so measuring from it puts
-      // every distance one month short. That is what turned a 12-month gap into
-      // 11, missed the year jump, and left it crawling a month at a time.
-      const shown = displayedMonth(panel);
-      if (!shown) throw new Error('The date picker rendered no days');
-
-      const diff = monthsBetween(`${shown}-01`, iso);
-      const back = diff < 0;
-      const magnitude = Math.abs(diff);
-
-      const button = panel.querySelector(
-        magnitude >= 12
-          ? back
-            ? '.ant-picker-header-super-prev-btn'
-            : '.ant-picker-header-super-next-btn'
-          : back
-            ? '.ant-picker-header-prev-btn'
-            : '.ant-picker-header-next-btn'
-      );
-      if (!button) throw new Error(`Could not scroll the calendar to ${iso}`);
-
-      fullClick(button);
-      await sleep(220);
-    }
-    throw new Error(`Could not reach ${iso} in the calendar`);
-  }
 
   /**
    * Sets both dates, walking the picker back when the target is out of reach.
@@ -422,56 +371,47 @@
    * earliest date offered and try again from there.
    */
   async function pickRange(startISO, endISO, startInput, endInput) {
-    fullClick(endInput);
-    await waitFor(openPicker, { label: 'the date picker' });
-
+    const targetMonth = endISO.slice(0, 7);
     let placed = false;
 
-    for (let step = 0; step < 20; step += 1) {
-      // ALWAYS re-focus the end field before reaching for the end date. An
-      // earlier version let the picker decide which field was active after each
-      // pick, and it moved on to the start — so the END date got typed into the
-      // START box. Asking for April produced 30-04 → 09-05 and then failed.
-      fullClick(endInput);
-      await sleep(350);
+    for (let step = 0; step < 15; step += 1) {
+      // START MOVES FIRST. The end can never precede the start, so from a
+      // settled range both fields refuse an earlier date until the start gives
+      // way: with 01-04 → 30-04 on screen, asking for 31-03 as the end was
+      // refused, and so was 01-03 as the start.
+      const startPanel = await openFieldAt(startInput, targetMonth);
+      const stone = earliestOffered(startPanel);
+      if (stone) {
+        await takeCell(startPanel, stone);
+      }
 
-      const cell = await reachCell(endISO, endInput);
-      if (cell && !cell.classList.contains('ant-picker-cell-disabled')) {
-        fullClick(cell.querySelector('.ant-picker-cell-inner') || cell);
-        await sleep(500);
+      // With the start dragged back, the end can follow.
+      const endPanel = await openFieldAt(endInput, targetMonth);
+      if (await takeCell(endPanel, endISO)) {
         placed = true;
         break;
       }
 
-      // Out of reach. Drag the window back one notch: take the earliest date
-      // the END will accept, then the earliest the START will accept. The
-      // second of those re-anchors the end's window further back still, which
-      // is what makes the next attempt reach further.
-      const endPanel = await ensurePickerOpen(endInput);
-      const earliestEnd = earliestOffered(endPanel);
-      if (!earliestEnd || earliestEnd <= endISO) {
-        throw new Error(`SiteGiant will not offer any date near ${endISO}`);
+      // Still out of reach — take whatever the end will accept and go round
+      // again. Refuse to move forwards, or a reset calendar sends us to today:
+      // reading the panel before navigating once put 01-08 in the start box.
+      const endStone = earliestOffered(endPanel);
+      if (!endStone || (stone && endStone > stone && endStone > endISO && step > 0)) {
+        throw new Error(`SiteGiant would not offer a date near ${endISO}`);
       }
-      await pickDateCell(earliestEnd, endInput);
-      await sleep(450);
-
-      fullClick(startInput);
-      await sleep(350);
-      const startPanel = await ensurePickerOpen(startInput);
-      const earliestStart = earliestOffered(startPanel);
-      if (earliestStart) {
-        await pickDateCell(earliestStart, startInput);
-        await sleep(450);
+      if (!(await takeCell(endPanel, endStone))) {
+        throw new Error(`SiteGiant would not offer a date near ${endISO}`);
       }
     }
 
     if (!placed) throw new Error(`Could not set the end date to ${endISO}`);
 
     // The start is within a month of the end now, so it goes straight in.
-    fullClick(startInput);
-    await sleep(350);
-    await pickDateCell(startISO, startInput);
-    await sleep(500);
+    const finalPanel = await openFieldAt(startInput, targetMonth);
+    if (!(await takeCell(finalPanel, startISO))) {
+      throw new Error(`SiteGiant would not accept ${startISO} as the start date`);
+    }
+    await sleep(400);
   }
 
   async function ordersSubmit({ startISO, endISO }) {

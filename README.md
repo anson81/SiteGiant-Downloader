@@ -298,15 +298,23 @@ straight to `/items/batch-edit` sidesteps it.
   format — verified on the live page. The calendar is the only way in, and its
   cells carry `title="YYYY-MM-DD"`, which is what `pickDateCell()` targets.
   Only ~2 months render at a time, so a wide range walks the header arrows first.
-- **The allowed window RATCHETS, and `pickRange()` exploits it.** A date is only
-  accepted within ~31 days of whatever is already chosen, and with nothing chosen
-  that window sits near today. But each pick re-anchors it to the other field, so
-  taking the earliest date offered drags the window back ~31 days — repeat and
-  any date is reachable. Choosing the END first matters for the same reason.
-  Two wrong conclusions were drawn before this was understood: first that only
-  the *length* of an export was capped, then that SiteGiant discarded anything
-  older than 90 days. Neither is true, and the second wrongly blocked months in
-  the popup that were perfectly exportable.
+- **The allowed window RATCHETS, and `pickRange()` walks it.** A date is only
+  accepted within ~31 days of whatever is already chosen. Each pick re-anchors
+  the window, so repeatedly taking the earliest date offered reaches any month.
+  Three separate mistakes were made getting here, each worth not repeating:
+  - *The start must move first.* The end can never precede the start, so from a
+    settled range BOTH fields refuse an earlier date until the start gives way.
+    With `01-04 → 30-04` on screen, `31-03` was refused as an end and `01-03` as
+    a start.
+  - *Click the field you mean to set.* After a pick the picker chooses the next
+    field itself, which put the END date into the START box — asking for April
+    produced `30-04 → 09-05` and then failed.
+  - *Re-scroll to the target month every time.* The calendar jumps back to TODAY
+    after every pick, so reading "the earliest date offered" without scrolling
+    first describes the wrong months — that is how `01-08` reached the start box
+    while reaching for April.
+
+  Proven on the live dialog: April lands in 4 picks, March in 3 more.
 - **Menu items are `<p class="un-dots-option">`, not links or buttons**, and
   the label is split: `<span>Export </span><b><span>Orders</span></b>`. The
   first version searched `a,button,li,div,span` and so never even looked at the
