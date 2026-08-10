@@ -1,8 +1,8 @@
 {
-    "version":  "1.7.0",
+    "version":  "1.8.0",
     "notes":  [
-                  "Reach any month, not just recent ones. A month more than about 31 days back offers no selectable date at all, so the walk now scrolls forward to find the nearest month that does and uses that as a stepping stone.",
-                  "Stop instead of hanging when the dates will not move any further back."
+                  "Files keep their real names again. Chrome shuts the extension down while a run waits on SiteGiant, and the name it meant to save under went with it — so the file arrived as \"download.zip\" and the run reported that another extension had overridden it. The name was being dropped here, not taken.",
+                  "The run now keeps what it needs somewhere that survives being shut down, holds itself awake while a run is in flight, and makes Chrome wait for the name instead of picking its own."
               ],
     "files":  [
                   "background/background.js",

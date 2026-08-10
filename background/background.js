@@ -497,12 +497,87 @@ async function fetchZip(url) {
  */
 let pendingPath = null;
 
-chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-  if (pendingPath && item.byExtensionId === chrome.runtime.id) {
-    suggest({ filename: pendingPath, conflictAction: 'overwrite' });
-    return true;
+/* ------------------------------------------------------------------ *
+ * Surviving the service worker
+ *
+ * `pendingPath` and `state.folder` lived only in this worker's memory, and
+ * MV3 stops an idle worker — which a run spends minutes being, while it waits
+ * on SiteGiant to generate an export. When the worker came back for the
+ * download event both were gone, no name was suggested, and Chrome fell back
+ * to its own: "download.zip". The extension then correctly reported that
+ * something had overridden it, and pointed at other extensions, when the name
+ * had in fact been dropped here.
+ *
+ * storage.session holds this across worker restarts without touching disk,
+ * and Chrome clears it on exit, so a stale run cannot outlive the browser.
+ * ------------------------------------------------------------------ */
+function persistRun() {
+  return chrome.storage.session
+    .set({
+      runtimeState: {
+        running: state.running,
+        folder: state.folder,
+        pendingPath,
+      },
+    })
+    .catch(() => {});
+}
+
+async function hydrateRun() {
+  if (state.running) return;
+  try {
+    const { runtimeState } = await chrome.storage.session.get('runtimeState');
+    if (runtimeState && runtimeState.running) {
+      state.running = true;
+      state.folder = runtimeState.folder;
+      if (!pendingPath) pendingPath = runtimeState.pendingPath || null;
+    }
+  } catch (_) {
+    /* nothing worth restoring */
   }
-  return false;
+}
+
+// Started at module evaluation, so a woken worker is already catching up
+// before the download event it was woken for is handled.
+const hydrating = hydrateRun();
+
+/**
+ * A run waits minutes on SiteGiant, and Chrome stops an idle worker after
+ * about 30 seconds. Any extension API call resets that timer; hydrateRun() is
+ * the safety net for when this is not enough.
+ */
+let keepAliveTimer = null;
+
+function startKeepAlive() {
+  if (keepAliveTimer) return;
+  keepAliveTimer = setInterval(() => {
+    chrome.runtime.getPlatformInfo().catch(() => {});
+  }, 20000);
+}
+
+function stopKeepAlive() {
+  if (keepAliveTimer) clearInterval(keepAliveTimer);
+  keepAliveTimer = null;
+}
+
+/** The path this download should take, or null to leave it to Chrome. */
+async function resolveDownloadPath(item) {
+  await hydrating;
+  if (!pendingPath) return null;
+  if (item.byExtensionId !== chrome.runtime.id) return null;
+  return pendingPath;
+}
+
+chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  // Returning true is what buys the await above. Without it Chrome commits a
+  // filename the moment this listener returns, and a worker woken by this very
+  // event could never read its state back in time.
+  resolveDownloadPath(item)
+    .then((path) =>
+      path ? suggest({ filename: path, conflictAction: 'overwrite' }) : suggest()
+    )
+    .catch(() => suggest());
+  return true;
 });
 
 /** Waits for Chrome to finish writing, so "saved" is a fact and not a hope. */
@@ -527,6 +602,9 @@ function basename(p) {
 async function saveFile(base64, filename) {
   const path = `${ROOT_FOLDER}/${state.folder}/${filename}`;
   pendingPath = path;
+  // Awaited, not fired and forgotten: the download starts on the next line and
+  // the listener may be reading this back from a worker that restarted since.
+  await persistRun();
 
   let downloadId;
   try {
@@ -541,6 +619,7 @@ async function saveFile(base64, filename) {
     // resolves, so releasing it immediately would race the listener.
     setTimeout(() => {
       pendingPath = null;
+      persistRun();
     }, 5000);
   }
 
@@ -664,6 +743,8 @@ async function runReports(ids, { month } = {}) {
     results: blankResults(selected.map((r) => r.id)),
   };
   persist();
+  persistRun();
+  startKeepAlive();
 
   let tabId;
   try {
@@ -675,6 +756,8 @@ async function runReports(ids, { month } = {}) {
     state.running = false;
     state.finishedAt = Date.now();
     persist();
+    persistRun();
+    stopKeepAlive();
     return publicState();
   }
 
@@ -750,6 +833,8 @@ async function runReports(ids, { month } = {}) {
   state.running = false;
   state.finishedAt = Date.now();
   persist();
+  persistRun();
+  stopKeepAlive();
   return publicState();
 }
 
