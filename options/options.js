@@ -253,13 +253,26 @@ async function install() {
     const files = (remote.files || []).filter((f) => f !== 'manifest.json');
     files.push('manifest.json');
 
-    let done = 0;
+    // Fetch EVERYTHING before writing anything.
+    //
+    // Downloading and writing file by file means a connection that drops
+    // halfway leaves the folder holding a mix of old and new code — which
+    // still loads, and misbehaves in ways no version number explains. Writing
+    // manifest.json last keeps it from CLAIMING the new version, but that only
+    // helps if the rest of the files agree with each other.
+    const fetched = [];
     for (const file of files) {
-      status.textContent = `Updating ${file} (${done + 1} of ${files.length})…`;
-
+      status.textContent = `Downloading ${file} (${fetched.length + 1} of ${files.length})…`;
       const res = await fetch(`${base}/${file}?t=${Date.now()}`);
       if (!res.ok) throw new Error(`Could not download ${file} (HTTP ${res.status})`);
-      const bytes = await res.arrayBuffer();
+      fetched.push({ file, bytes: await res.arrayBuffer() });
+    }
+
+    // Everything is in hand; now it can go to disk. manifest.json is still
+    // last, so an interrupted WRITE leaves the old version number in place.
+    let done = 0;
+    for (const { file, bytes } of fetched) {
+      status.textContent = `Writing ${file} (${done + 1} of ${fetched.length})…`;
 
       const parts = file.split('/');
       const name = parts.pop();
