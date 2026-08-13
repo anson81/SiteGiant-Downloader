@@ -538,8 +538,13 @@ async function hydrateRun() {
 }
 
 // Started at module evaluation, so a woken worker is already catching up
-// before the download event it was woken for is handled.
-const hydrating = hydrateRun();
+// before the download event it was woken for is handled. `hydrated` flips once
+// it has settled, which is what lets the filename listener answer without
+// waiting — see the listener for why that decides where the file lands.
+let hydrated = false;
+const hydrating = hydrateRun().then(() => {
+  hydrated = true;
+});
 
 /**
  * A run waits minutes on SiteGiant, and Chrome stops an idle worker after
@@ -560,22 +565,51 @@ function stopKeepAlive() {
   keepAliveTimer = null;
 }
 
-/** The path this download should take, or null to leave it to Chrome. */
-async function resolveDownloadPath(item) {
-  await hydrating;
+/**
+ * The path this download should take, or null to leave it to Chrome.
+ *
+ * Deliberately synchronous: it only reads what is already in memory.
+ */
+function decideDownloadPath(item) {
   if (!pendingPath) return null;
   if (item.byExtensionId !== chrome.runtime.id) return null;
   return pendingPath;
 }
 
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-  // Returning true is what buys the await above. Without it Chrome commits a
-  // filename the moment this listener returns, and a worker woken by this very
-  // event could never read its state back in time.
-  resolveDownloadPath(item)
-    .then((path) =>
-      path ? suggest({ filename: path, conflictAction: 'overwrite' }) : suggest()
-    )
+  // ANSWER SYNCHRONOUSLY WHENEVER POSSIBLE.
+  //
+  // This listener used to await hydration on every download, even a warm
+  // worker mid-run with the path sitting in memory. That looked correct and
+  // was not: an answer that arrives after Chrome has settled on a filename is
+  // the same as no answer at all, and Chrome falls back to its own name —
+  // "download.zip", then "download (1).zip" for the second file of the run.
+  // It is a race, so it passed here and failed on a slower machine, which is
+  // the worst way for a bug to behave. The Shopee twin lost a whole run to
+  // this on 10 Aug and has answered synchronously ever since.
+  //
+  // On a worker that is already awake — which the keep-alive exists to ensure
+  // during a run — everything needed is in memory, so this is decided before
+  // the listener returns.
+  // `pendingPath` in memory is authoritative — hydration only ever fills a
+  // blank one — so it is as good a reason to answer at once as hydration is.
+  if (hydrated || pendingPath) {
+    const path = decideDownloadPath(item);
+    if (path) suggest({ filename: path, conflictAction: 'overwrite' });
+    else suggest();
+    return;
+  }
+
+  // The only remaining case: a worker woken by this very event with nothing in
+  // memory yet. Returning true is what buys the wait. Answering late is a
+  // gamble on Chrome still listening, but saying nothing loses the name for
+  // certain.
+  hydrating
+    .then(() => {
+      const path = decideDownloadPath(item);
+      if (path) suggest({ filename: path, conflictAction: 'overwrite' });
+      else suggest();
+    })
     .catch(() => suggest());
   return true;
 });

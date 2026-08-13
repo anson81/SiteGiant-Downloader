@@ -353,6 +353,13 @@ straight to `/items/batch-edit` sidesteps it.
   nothing was ever exported — then builds one that was not needed.
 - **`downloads.download({filename})` is a suggestion.** Another extension on
   `onDeterminingFilename` can override it, so our path is re-asserted there.
+- **Answer `onDeterminingFilename` synchronously.** Awaiting anything before
+  calling `suggest()` — even hydration that settled minutes ago — lets Chrome
+  settle on its own name first, and the run lands as `download.zip` and
+  `download (1).zip` in plain Downloads. It is a race, so it passes on a fast
+  machine and fails on a slow one: v1.8.1 worked here and lost both files of a
+  13 Aug run on another PC. Only a worker woken *by* the download event may
+  wait, and only because it has nothing in memory to answer with.
 - **MV3 service workers die after ~30s idle.** The content script pings every
   10s. Do not remove the heartbeat.
 - **Timings were measured here, not copied from Shopee.** Orders complete in

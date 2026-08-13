@@ -1,7 +1,7 @@
 {
-    "version":  "1.8.1",
+    "version":  "1.9.0",
     "notes":  [
-                  "An interrupted update can no longer leave a half-updated extension. Every file is downloaded before any of them is written, so losing your connection partway through now changes nothing on disk instead of leaving a mix of old and new code."
+                  "The saved file keeps its name on slower machines too. Chrome asks what a download should be called and does not wait long for the answer; the extension used to look up its answer first, which was fast enough here and not fast enough elsewhere, so a run could land as download.zip in plain Downloads. It now answers immediately."
               ],
     "files":  [
                   "background/background.js",
