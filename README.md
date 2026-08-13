@@ -351,6 +351,12 @@ straight to `/items/batch-edit` sidesteps it.
 - **Read the export list only after it renders.** It is drawn by JavaScript
   after page load, so reading immediately sees an empty table and concludes
   nothing was ever exported — then builds one that was not needed.
+- **"A name I have not seen" does not mean "new export".** The list does not
+  always render every row at once, so a row can be unseen and a week old. On
+  13 Aug that gave a run a 6 Aug stock file, filed under today and pushed as
+  today's costs, while the export actually asked for was still Pending. Every
+  candidate must also prove, from the epoch in its own filename, that it was
+  built after the button was pressed. `pollForNewExport({ since })`.
 - **`downloads.download({filename})` is a suggestion.** Another extension on
   `onDeterminingFilename` can override it, so our path is re-asserted there.
 - **Answer `onDeterminingFilename` synchronously.** Awaiting anything before

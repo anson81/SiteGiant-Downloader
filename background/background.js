@@ -137,11 +137,25 @@ const pad = (n) => String(n).padStart(2, '0');
  * which matches that row's "Time Requested" exactly. Verified against two real
  * rows, so this is read, not guessed.
  */
-function exportAgeMs(name) {
+/**
+ * When SiteGiant built an export, read from the epoch in its own filename
+ * (`..._13-08-2026-1786587745.zip`). 0 when a name does not carry one.
+ *
+ * Checked against the live list: the stamp matches the row's Time Requested to
+ * the second, so SiteGiant's clock and this machine's agree.
+ */
+function exportTimeMs(name) {
   const match = /-(\d{10})\.zip$/i.exec(String(name || ''));
-  if (!match) return Infinity;
-  return Date.now() - Number(match[1]) * 1000;
+  return match ? Number(match[1]) * 1000 : 0;
 }
+
+function exportAgeMs(name) {
+  const built = exportTimeMs(name);
+  return built ? Date.now() - built : Infinity;
+}
+
+/** Room for the two clocks to disagree, without letting yesterday through. */
+const CLOCK_SLACK_MS = 5 * 60 * 1000;
 
 /**
  * Reuse exists ONLY to stop a double-click or an immediate retry building two
@@ -309,15 +323,27 @@ async function ensureSiteGiantTab() {
  *
  * Observed on the live site: orders complete in about a second, Basic Info in
  * under ten. A 2s poll is generous for both.
+ *
+ * "A name I had not seen" is NOT on its own proof of a new export. The list
+ * does not always render every row at once, so a row can be new to us and a
+ * week old in fact — on 13 Aug that handed a run a 6 Aug stock file, which was
+ * then filed under today and pushed as today's costs. Each candidate must also
+ * say, in its own filename, that it was built after we pressed the button.
  * ------------------------------------------------------------------ */
-async function pollForNewExport(tabId, { command, before, refresh, timeoutMs = 120000 }) {
+async function pollForNewExport(tabId, { command, before, refresh, since, timeoutMs = 120000 }) {
   const deadline = Date.now() + timeoutMs;
+  const notBefore = (since || Date.now()) - CLOCK_SLACK_MS;
 
   for (;;) {
     if (state.cancelled) throw new Error('Cancelled');
 
     const { rows } = await sendToContent(tabId, { type: command });
-    const fresh = rows.find((r) => !before.has(r.name));
+    const fresh = rows.find((r) => {
+      if (before.has(r.name)) return false;
+      const built = exportTimeMs(r.name);
+      // A name with no stamp cannot be judged; unseen is all we have.
+      return !built || built >= notBefore;
+    });
     if (fresh) return fresh;
 
     if (Date.now() > deadline) {
@@ -402,6 +428,8 @@ async function runOrders(tabId, settings, { month } = {}) {
 
   await navigate(tabId, ORDERS_URL);
 
+  const since = Date.now();
+
   // Submitting is a form POST that NAVIGATES. The page can tear down before it
   // acknowledges the message, so a closed port here means the click landed —
   // not that it failed. Any other error is real and must surface.
@@ -429,6 +457,7 @@ async function runOrders(tabId, settings, { month } = {}) {
     command: 'ordersQueue',
     before,
     refresh: 'reload',
+    since,
     timeoutMs: Math.min(120000 + spanDays * 1000, 600000),
   });
 
@@ -457,12 +486,14 @@ async function runStockCost(tabId) {
   }
 
   const before = new Set(rows.map((r) => r.name));
+  const since = Date.now();
   await sendToContent(tabId, { type: 'batchGenerate' });
 
   const row = await pollForNewExport(tabId, {
     command: 'batchQueue',
     before,
     refresh: 'button',
+    since,
   });
 
   return { ...row, reused: false };

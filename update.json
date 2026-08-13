@@ -1,7 +1,7 @@
 {
-    "version":  "1.9.0",
+    "version":  "1.9.1",
     "notes":  [
-                  "The saved file keeps its name on slower machines too. Chrome asks what a download should be called and does not wait long for the answer; the extension used to look up its answer first, which was fast enough here and not fast enough elsewhere, so a run could land as download.zip in plain Downloads. It now answers immediately."
+                  "Waits for the export you asked for. The list does not always draw every row at once, so a row could be new to the extension and a week old in fact — one run took a 6 August stock file while the fresh one was still Pending. Each file now has to prove from its own name that it was built after you pressed the button."
               ],
     "files":  [
                   "background/background.js",
