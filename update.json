@@ -1,7 +1,7 @@
 {
-    "version":  "1.10.0",
+    "version":  "1.10.1",
     "notes":  [
-                  "Sends your files to the real ProfitLens at https://profitlens.my instead of a copy running on this computer. Any machine can now run the download and the data lands in the same place. If your address was still the old http://localhost:3000 it is moved for you; a different address you chose yourself is left alone."
+                  "Fixes \u0027SiteGiant would not accept \u003cdate\u003e as the start date\u0027 when the window crosses into the previous month. The calendar was opened on the end date\u0027s month, so a start date sitting in the month before was simply not on that page - the extension reported a refusal for a date it never actually offered. A 29-day sync ending 14 August starts 17 July, which is exactly that case."
               ],
     "files":  [
                   "background/background.js",

@@ -440,8 +440,17 @@
 
     if (!placed) throw new Error(`Could not set the end date to ${endISO}`);
 
-    // The start is within a month of the end now, so it goes straight in.
-    const finalPanel = await openFieldAt(startInput, targetMonth);
+    // The start is within a month of the end now, so it goes straight in —
+    // but it has to be looked for in ITS OWN month, not the end's.
+    //
+    // This opened the panel at `targetMonth`, which is the END's month. Whenever
+    // the window crosses a month boundary the start is in the previous one, and
+    // the cell simply is not on that page: a 29-day window ending 14 Aug starts
+    // 17 July, the panel showed August, and the pick failed with "SiteGiant
+    // would not accept 2026-07-17 as the start date" — a report of refusal for a
+    // date nobody had actually offered it. A calendar-month run hid this,
+    // because there start and end share a month and the two are the same.
+    const finalPanel = await openFieldAt(startInput, startISO.slice(0, 7));
     if (!(await takeCell(finalPanel, startISO))) {
       throw new Error(`SiteGiant would not accept ${startISO} as the start date`);
     }
