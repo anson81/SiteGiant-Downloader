@@ -32,10 +32,11 @@ const REPORTS = [
 ];
 
 const DEFAULTS = {
-  // ProfitLens runs locally: profitlens.my is a parked Hostinger domain, not a
-  // deployment. Checked 2026-08-06. Change this — or the setting — the day it
-  // actually ships to a real host.
-  profitLensOrigin: 'http://localhost:3000',
+  // ProfitLens is live at profitlens.my since 2026-08-13 (Synology NAS behind a
+  // Cloudflare tunnel). The public address is the default because that is the
+  // only one that works from every machine — a laptop in a cafe has no
+  // localhost:3000. See MIGRATIONS below for installs that predate the launch.
+  profitLensOrigin: 'https://profitlens.my',
   days: 7,
   minDays: 7,
   /**
@@ -122,6 +123,24 @@ async function getSettings() {
     lastSuccessfulPush: stored.lastSuccessfulPush || null,
     lastOrdersExport: stored.lastOrdersExport || null,
   };
+}
+
+/**
+ * The address every install carried before ProfitLens went live.
+ *
+ * Changing DEFAULTS alone would move nobody: the old default was written into
+ * chrome.storage the first time the options page was saved, and a stored value
+ * always wins. So installs that still hold the pre-launch address — and only
+ * that exact address — are moved to the public one on update. A deliberately
+ * chosen origin (a different port, a LAN IP) is left alone, because it cannot
+ * be told apart from the old default by anything except its exact value.
+ */
+const PRE_LAUNCH_ORIGIN = 'http://localhost:3000';
+
+async function migrateSettings() {
+  const { profitLensOrigin } = await chrome.storage.local.get('profitLensOrigin');
+  if (profitLensOrigin !== PRE_LAUNCH_ORIGIN) return;
+  await chrome.storage.local.set({ profitLensOrigin: DEFAULTS.profitLensOrigin });
 }
 
 /* ------------------------------------------------------------------ *
@@ -1080,5 +1099,6 @@ chrome.runtime.onInstalled.addListener(() => {
     if (saved) state = { ...saved, running: false };
     setBadge();
   });
+  migrateSettings().catch(() => {});
   checkUpdate();
 });

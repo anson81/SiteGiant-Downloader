@@ -125,7 +125,7 @@ Click the ⚙ button in the popup.
 
 | Setting | What it does |
 |---|---|
-| ProfitLens address | Where files get sent. Defaults to `http://localhost:3000`, which is ProfitLens running on this computer. `profitlens.my` is a parked domain, not a deployment (checked 2026-08-06) — change this the day that stops being true |
+| ProfitLens address | Where files get sent. Defaults to `https://profitlens.my`, the real ProfitLens — live since 2026-08-13 on a Synology NAS behind a Cloudflare tunnel, reachable from any machine. Use `http://localhost:3000` only to send to a development copy running on this computer |
 | Send automatically | Turn off to only save files to your computer |
 | Days of orders | How far back the normal sync fetches. Minimum 7, maximum 31. Use **Get a past month** to reach older months |
 

@@ -1,7 +1,7 @@
 {
-    "version":  "1.9.1",
+    "version":  "1.10.0",
     "notes":  [
-                  "Waits for the export you asked for. The list does not always draw every row at once, so a row could be new to the extension and a week old in fact — one run took a 6 August stock file while the fresh one was still Pending. Each file now has to prove from its own name that it was built after you pressed the button."
+                  "Sends your files to the real ProfitLens at https://profitlens.my instead of a copy running on this computer. Any machine can now run the download and the data lands in the same place. If your address was still the old http://localhost:3000 it is moved for you; a different address you chose yourself is left alone."
               ],
     "files":  [
                   "background/background.js",
