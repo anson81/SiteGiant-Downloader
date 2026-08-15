@@ -127,7 +127,30 @@ Click the ⚙ button in the popup.
 |---|---|
 | ProfitLens address | Where files get sent. Defaults to `https://profitlens.my`, the real ProfitLens — live since 2026-08-13 on a Synology NAS behind a Cloudflare tunnel, reachable from any machine. Use `http://localhost:3000` only to send to a development copy running on this computer |
 | Send automatically | Turn off to only save files to your computer |
+| Reports folder | Choose one and the extension writes each report itself. Without it, files are saved through Chrome, where any other extension holding the `downloads` permission can rename them |
 | Days of orders | How far back the normal sync fetches. Minimum 7, maximum 31. Use **Get a past month** to reach older months |
+
+### Why the reports folder exists
+
+`downloads.download({filename})` only *requests* a name. Another extension
+listening on `onDeterminingFilename` can override it, and Chrome settles the tie
+by install recency — "the last extension installed whose listener passes a
+suggestion object to `suggest` wins".
+
+So the winner changes whenever some unrelated download manager auto-updates
+itself, which is why reports kept reappearing as `download (2).zip` weeks after
+each fix, only on machines with one installed. Passing `filename` to
+`download()` up front does not settle it either: this extension always did, and
+still lost on 15 Aug 2026.
+
+There is no way to win that contest reliably, so with a folder chosen the
+extension stops entering it and writes the file through a
+`FileSystemDirectoryHandle` instead. Chrome's download naming is never involved
+and no other extension is consulted. The File System Access API needs a
+document, which an MV3 service worker is not — hence `offscreen/`.
+
+Nothing changes for anyone who does not choose a folder; the download path
+remains exactly as it was.
 
 ### Loading your back history — use **Get a past month**
 

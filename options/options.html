@@ -37,6 +37,25 @@
       </section>
 
       <section>
+        <h2>Where reports are saved</h2>
+
+        <p class="note">
+          Choose a folder and the extension writes each report into it itself. Without one,
+          it asks Chrome to save the file — and any other extension that handles downloads
+          can rename it, which is how reports end up as <code>download (2).zip</code>. Chrome
+          gives the final say to whichever extension was installed most recently, so that
+          problem comes back on its own whenever one of them updates. Choosing a folder ends
+          it for good.
+        </p>
+
+        <p id="output-status" class="status">Checking…</p>
+        <div class="buttons">
+          <button id="pick-output" type="button">Choose the reports folder…</button>
+          <button id="forget-output" type="button" hidden>Forget it</button>
+        </div>
+      </section>
+
+      <section>
         <h2>Orders</h2>
 
         <label class="field">

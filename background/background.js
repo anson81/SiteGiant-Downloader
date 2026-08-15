@@ -64,6 +64,9 @@ let state = {
   finishedAt: null,
   folder: null,
   lastDownloadId: null,
+  // Set instead of lastDownloadId when the file was written into the seller's
+  // chosen folder, where there is no download to point Chrome at.
+  lastOutputPath: null,
   results: {},
 };
 
@@ -683,7 +686,78 @@ function basename(p) {
   return String(p || '').split(/[\\/]/).pop();
 }
 
+/* ------------------------------------------------------------------ *
+ * Writing the file ourselves
+ *
+ * The download route cannot guarantee a filename — see offscreen/offscreen.js
+ * for why. When the seller has chosen an output folder we write the file
+ * directly and Chrome's naming never enters into it; otherwise we fall back to
+ * downloads.download() and behave exactly as before.
+ * ------------------------------------------------------------------ */
+let offscreenReady = null;
+
+async function ensureOffscreen() {
+  // createDocument() throws if one already exists, and there is no "get or
+  // create". Asking Chrome what is open is the only race-free way to do this.
+  const existing = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+  if (existing.length) return;
+
+  if (!offscreenReady) {
+    offscreenReady = chrome.offscreen
+      .createDocument({
+        url: 'offscreen/offscreen.html',
+        // The nearest true reason Chrome offers. There is no "FILE_SYSTEM"
+        // reason; this document exists to turn base64 into bytes on disk.
+        reasons: ['BLOBS'],
+        justification: 'Write report files into the folder the seller chose',
+      })
+      .finally(() => {
+        offscreenReady = null;
+      });
+  }
+  await offscreenReady;
+}
+
+/**
+ * Writes through the chosen folder. Returns null when that is not possible, so
+ * the caller can fall back rather than fail.
+ */
+async function saveToChosenFolder(base64, filename) {
+  try {
+    await ensureOffscreen();
+    const reply = await chrome.runtime.sendMessage({
+      target: 'offscreen-writer',
+      segments: [ROOT_FOLDER, state.folder],
+      filename,
+      base64,
+    });
+
+    if (reply?.ok) return reply;
+
+    // Not an error worth stopping for: no folder chosen yet, or the permission
+    // lapsed. Both are settled in Options, and the download fallback still
+    // produces the file meanwhile.
+    if (reply?.reason) lastFolderIssue = reply.reason;
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Why the last folder write was skipped, surfaced in the popup. */
+let lastFolderIssue = null;
+
 async function saveFile(base64, filename) {
+  const written = await saveToChosenFolder(base64, filename);
+  if (written) {
+    // Nothing to verify: the bytes are on disk under this exact name, because
+    // we put them there.
+    state.lastDownloadId = null;
+    state.lastOutputPath = written.path;
+    persist();
+    return { downloadId: null, path: written.path, viaFolder: true };
+  }
+
   const path = `${ROOT_FOLDER}/${state.folder}/${filename}`;
   pendingPath = path;
   // Awaited, not fired and forgotten: the download starts on the next line and
@@ -715,7 +789,10 @@ async function saveFile(base64, filename) {
   if (saved && saved !== filename) {
     throw new Error(
       `Chrome saved this as "${saved}" instead of "${filename}". ` +
-        'Another extension may be overriding download filenames — check chrome://extensions.'
+        'Another extension holding the downloads permission overrode the name — Chrome gives ' +
+        'the final say to whichever was installed most recently, which is why this returns ' +
+        'whenever one of them updates itself. Set a reports folder in Options and the ' +
+        'extension writes the file itself, which no other extension can touch.'
     );
   }
 
@@ -824,6 +901,7 @@ async function runReports(ids, { month } = {}) {
     // they happened to be fetched, which tells you nothing about what is in it.
     folder: month ? `${month}-monthly` : dateFolder(new Date()),
     lastDownloadId: null,
+    lastOutputPath: null,
     results: blankResults(selected.map((r) => r.id)),
   };
   persist();
@@ -985,6 +1063,14 @@ async function revealFolder() {
       /* fall through */
     }
   }
+
+  // Written into the seller's own folder, so there is no download to reveal and
+  // no extension API that opens an arbitrary directory. Saying where the file
+  // is beats opening the Downloads folder, which is the one place it is NOT.
+  if (state.lastOutputPath) {
+    return { ok: true, folder: state.lastOutputPath };
+  }
+
   chrome.downloads.showDefaultFolder();
   return { ok: true };
 }
@@ -1088,6 +1174,12 @@ async function handle(msg) {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Addressed to the offscreen writer, not to us. Without this the two would
+  // both answer and whichever replied first would win — and this listener
+  // replies to anything, so it would usually be this one, with an error for an
+  // unknown message type while the file was being written perfectly well.
+  if (msg?.target === 'offscreen-writer') return undefined;
+
   handle(msg)
     .then((result) => sendResponse(result))
     .catch((err) => sendResponse({ error: err?.message || String(err) }));

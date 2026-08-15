@@ -1,7 +1,7 @@
 {
-    "version":  "1.10.1",
+    "version":  "1.11.0",
     "notes":  [
-                  "Fixes \u0027SiteGiant would not accept \u003cdate\u003e as the start date\u0027 when the window crosses into the previous month. The calendar was opened on the end date\u0027s month, so a start date sitting in the month before was simply not on that page - the extension reported a refusal for a date it never actually offered. A 29-day sync ending 14 August starts 17 July, which is exactly that case."
+                  "Adds a reports folder in Options. Choose one and the extension writes each report itself, so no other extension can rename it - this is the permanent fix for files landing as download (2).zip. Without a folder chosen nothing changes: it still saves through Chrome as before."
               ],
     "files":  [
                   "background/background.js",
@@ -11,6 +11,8 @@
                   "icons/icon16.png",
                   "icons/icon48.png",
                   "manifest.json",
+                  "offscreen/offscreen.html",
+                  "offscreen/offscreen.js",
                   "options/options.css",
                   "options/options.html",
                   "options/options.js",

@@ -77,6 +77,8 @@ function renderUpdate(info) {
 const DB_NAME = 'sitegiant-downloader';
 const STORE = 'handles';
 const HANDLE_KEY = 'extensionDir';
+/** Where reports are written. Separate from the folder used for self-updates. */
+const OUTPUT_KEY = 'outputFolder';
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -114,6 +116,60 @@ async function idbDelete(key) {
     tx.objectStore(STORE).delete(key);
     tx.oncomplete = () => resolve();
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * The reports folder
+ *
+ * Chosen once and remembered. The offscreen writer reads the same handle out of
+ * IndexedDB — it cannot ask for permission itself, because that needs a click,
+ * and there is nobody to click in a background document. So this page is the
+ * only place the grant can be renewed, which is why it re-checks on every open.
+ * ------------------------------------------------------------------ */
+async function refreshOutputFolder() {
+  const status = $('output-status');
+  const forget = $('forget-output');
+  const handle = await idbGet(OUTPUT_KEY);
+
+  if (!handle) {
+    status.textContent =
+      'No folder chosen — reports are saved through Chrome, where another extension can rename them.';
+    forget.hidden = true;
+    return;
+  }
+
+  // mayPrompt: false. Opening Options should report the state, not fire a
+  // permission dialog at someone who came here to change something else.
+  const writable = await ensureWritable(handle, false);
+  status.textContent = writable
+    ? `Writing reports into "${handle.name}". No other extension can rename them.`
+    : `"${handle.name}" needs permission again — choose it once more.`;
+  forget.hidden = false;
+}
+
+async function pickOutputFolder() {
+  const status = $('output-status');
+
+  if (!window.showDirectoryPicker) {
+    status.textContent = 'This Chrome cannot choose a folder, so reports keep using downloads.';
+    return;
+  }
+
+  try {
+    const chosen = await window.showDirectoryPicker({ mode: 'readwrite' });
+    if (!(await ensureWritable(chosen, true))) {
+      status.textContent = 'Permission refused — nothing changed.';
+      return;
+    }
+    await idbSet(OUTPUT_KEY, chosen);
+    await refreshOutputFolder();
+  } catch (err) {
+    // Cancelling the picker is a decision, not a fault, and Chrome's own
+    // wording for it ("The user aborted a request") reads like one.
+    if (err?.name !== 'AbortError') {
+      status.textContent = `Could not use that folder: ${err?.message || err}`;
+    }
+  }
 }
 
 /** Asks only if we do not already hold write permission. */
@@ -328,6 +384,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderUpdate(await send({ type: 'checkUpdate' }));
   });
   $('install').addEventListener('click', install);
+  $('pick-output').addEventListener('click', pickOutputFolder);
+  $('forget-output').addEventListener('click', async () => {
+    await idbDelete(OUTPUT_KEY);
+    await refreshOutputFolder();
+  });
+  await refreshOutputFolder();
   $('pick-folder').addEventListener('click', requestFolder);
   $('forget-folder').addEventListener('click', async () => {
     await idbDelete(HANDLE_KEY);
