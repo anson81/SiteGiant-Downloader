@@ -630,6 +630,27 @@ function decideDownloadPath(item) {
 }
 
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  // SAY NOTHING ABOUT DOWNLOADS THAT ARE NOT OURS.
+  //
+  // Calling suggest() with no argument is still an ANSWER, and Chrome gives
+  // the final word to the most recently installed extension that answers. So
+  // this listener, by politely saying "no opinion" about every download in the
+  // browser, was overriding whoever did have an opinion — including the Shopee
+  // twin, whose files then landed in plain Downloads under Chrome's own names.
+  //
+  // That is the whole reason "download (2).zip" kept coming back. It was never
+  // a stranger's download manager: it was these two extensions taking turns.
+  // Each release made one of them the newest, and the newest silenced the
+  // other. The dates line up exactly — Shopee v1.14.4 shipped 14 Aug and
+  // SiteGiant broke on the 15th; SiteGiant v1.11.0 went on on 17 Aug and
+  // Shopee broke the same afternoon.
+  //
+  // Returning without touching suggest() is a real abstention: Chrome does not
+  // count this extension for this download at all. And byExtensionId is known
+  // synchronously from the event itself, so this needs no stored state and is
+  // correct even on a worker that has just woken up.
+  if (item.byExtensionId !== chrome.runtime.id) return;
+
   // ANSWER SYNCHRONOUSLY WHENEVER POSSIBLE.
   //
   // This listener used to await hydration on every download, even a warm

@@ -1,7 +1,7 @@
 {
-    "version":  "1.11.0",
+    "version":  "1.11.1",
     "notes":  [
-                  "Adds a reports folder in Options. Choose one and the extension writes each report itself, so no other extension can rename it - this is the permanent fix for files landing as download (2).zip. Without a folder chosen nothing changes: it still saves through Chrome as before."
+                  "Stops this extension silencing the Shopee one. It was answering Chrome about every download in the browser, including downloads belonging to other extensions, and Chrome gives the final say to whichever extension was installed most recently - so the twin\u0027s files lost their names and folder. It now says nothing about downloads it did not start."
               ],
     "files":  [
                   "background/background.js",
