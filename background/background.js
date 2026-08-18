@@ -667,25 +667,40 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   // the listener returns.
   // `pendingPath` in memory is authoritative — hydration only ever fills a
   // blank one — so it is as good a reason to answer at once as hydration is.
+  // NEVER ANSWER BLANK ABOUT OUR OWN FILE.
+  //
+  // suggest() with no arguments is not silence. Chrome's own documentation:
+  // listeners may call suggest without arguments "in order to allow the
+  // download to use downloadItem.filename" — that is the tentative name Chrome
+  // invented from the URL, and our zip comes from a data: URL with no name in
+  // it, so that name is "download.zip". Answering blank therefore throws away
+  // the path we passed to downloads.download() and asks for the bad name by
+  // hand. Returning instead is a true abstention: Chrome is not counted for
+  // this download at all, and the path we asked for stands.
   if (hydrated || pendingPath) {
     const path = decideDownloadPath(item);
     if (path) suggest({ filename: path, conflictAction: 'overwrite' });
-    else suggest();
     return;
   }
 
-  // The only remaining case: a worker woken by this very event with nothing in
-  // memory yet. Returning true is what buys the wait. Answering late is a
-  // gamble on Chrome still listening, but saying nothing loses the name for
-  // certain.
-  hydrating
-    .then(() => {
-      const path = decideDownloadPath(item);
-      if (path) suggest({ filename: path, conflictAction: 'overwrite' });
-      else suggest();
-    })
-    .catch(() => suggest());
-  return true;
+  // A worker woken by this very event, with nothing in memory yet.
+  //
+  // This used to return true and answer after hydration. That was a bad trade
+  // once the mechanics were checked properly:
+  //
+  //   - Returning true obliges us to call suggest(), or the download stalls
+  //     for ever. So the failure path is forced to answer blank...
+  //   - ...and blank means "use downloadItem.filename", which is Chrome's
+  //     guess from the URL. Our zip is a data: URL with no name in it, so the
+  //     guess is "download.zip". The gamble's losing side WAS the bug.
+  //   - Abstaining costs nothing here, because the path was already passed to
+  //     downloads.download() and stands unless someone overrides it. The
+  //     listener is only ever a backstop for this extension.
+  //
+  // The Shopee twin cannot do this — its downloads are started by Shopee's own
+  // page, so its listener is the only thing that can place them, and it has to
+  // take the gamble. Ours does not.
+  return;
 });
 
 /** Waits for Chrome to finish writing, so "saved" is a fact and not a hope. */
@@ -804,22 +819,23 @@ async function saveFile(base64, filename) {
 
   const item = await verifyDownload(downloadId);
 
-  // If Chrome saved it elsewhere, something overrode us. Say so rather than
-  // ticking a file that is not where we claim it is.
-  const saved = basename(item.filename);
-  if (saved && saved !== filename) {
-    throw new Error(
-      `Chrome saved this as "${saved}" instead of "${filename}". ` +
-        'Another extension holding the downloads permission overrode the name — Chrome gives ' +
-        'the final say to whichever was installed most recently, which is why this returns ' +
-        'whenever one of them updates itself. Set a reports folder in Options and the ' +
-        'extension writes the file itself, which no other extension can touch.'
-    );
-  }
-
   state.lastDownloadId = downloadId;
   persist();
-  return { downloadId, path: item.filename };
+
+  // A NAME IS NOT WORTH THE RUN.
+  //
+  // If Chrome saved it under another name, something else on this machine
+  // holds the downloads permission and overrode us. That used to throw, which
+  // ended the report — and with it the ProfitLens import, which never needed
+  // the file at all: the bytes go up from memory, and this copy on disk is for
+  // the seller's records. Trading a whole import for the name of a spare copy
+  // is the wrong way round. Report it and carry on.
+  const saved = basename(item.filename);
+  return {
+    downloadId,
+    path: item.filename,
+    misnamed: saved && saved !== filename ? saved : null,
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -972,11 +988,21 @@ async function runReports(ids, { month } = {}) {
       });
 
       const { base64, size } = await fetchZip(row.url);
-      await saveFile(base64, row.name);
+      const { misnamed } = await saveFile(base64, row.name);
+
+      // Appended to whatever the report ends up saying, so the seller can find
+      // the file. Naming it is the point: "download (4).zip" in plain
+      // Downloads is otherwise impossible to connect to this report.
+      const nameNote = misnamed
+        ? ` · saved as "${misnamed}" — another extension on this computer renamed it. ` +
+          'Set a reports folder in Options and this extension writes the file itself.'
+        : '';
 
       setResult(report.id, {
         status: settings.push ? 'pushing' : 'done',
-        message: settings.push ? 'Sending to ProfitLens…' : `Saved (${Math.round(size / 1024)} KB)`,
+        message: settings.push
+          ? 'Sending to ProfitLens…'
+          : `Saved (${Math.round(size / 1024)} KB)${nameNote}`,
         filename: row.name,
         size,
       });
@@ -998,7 +1024,8 @@ async function runReports(ids, { month } = {}) {
           status: 'done',
           message:
             `${pushed.created} new · ${pushed.updated} updated · ${pushed.unchanged} unchanged` +
-            (row.reused ? ` · from a ${ageMin} min old export` : ''),
+            (row.reused ? ` · from a ${ageMin} min old export` : '') +
+            nameNote,
           counts: pushed,
         });
       }

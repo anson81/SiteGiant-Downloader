@@ -1,7 +1,8 @@
 {
-    "version":  "1.11.1",
+    "version":  "1.11.2",
     "notes":  [
-                  "Stops this extension silencing the Shopee one. It was answering Chrome about every download in the browser, including downloads belonging to other extensions, and Chrome gives the final say to whichever extension was installed most recently - so the twin\u0027s files lost their names and folder. It now says nothing about downloads it did not start."
+                  "Reports no longer arrive as download.zip when another extension is installed. Two causes, both fixed: the Shopee twin was answering Chrome about these downloads while asleep, and this extension had one path where it answered blank about its own file - which tells Chrome to use the name it guessed from the link. It now stays silent unless it has a real name to give.",
+                  "A file Chrome renamed no longer fails the report. The data goes to ProfitLens from memory, so the import now finishes and the popup says where the file actually landed."
               ],
     "files":  [
                   "background/background.js",
