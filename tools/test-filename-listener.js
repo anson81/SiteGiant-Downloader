@@ -131,6 +131,20 @@ function bootWorker({ session = {}, sessionDelayMs = 0 } = {}) {
     structuredClone: (v) => JSON.parse(JSON.stringify(v)),
     addEventListener() {},
     removeEventListener() {},
+
+    // The real thing, not a no-op.
+    //
+    // background.js pulls lib/diagnostics.js in this way, and a stub that did
+    // nothing would leave the global it defines undefined - so the worker would
+    // boot here and throw in Chrome, which is the wrong way round for a harness
+    // whose whole purpose is to run the file that actually ships. Evaluating
+    // the script in this same context is exactly what a service worker does.
+    importScripts(...paths) {
+      for (const rel of paths) {
+        const file = path.resolve(path.dirname(SOURCE), rel);
+        vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, { filename: file });
+      }
+    },
   };
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
@@ -138,9 +152,15 @@ function bootWorker({ session = {}, sessionDelayMs = 0 } = {}) {
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(SOURCE, 'utf8'), sandbox, { filename: SOURCE });
 
+  // `const otherDownloaders = …` at the top level of a classic script is a
+  // lexical binding, not a property of the global object, so it cannot be read
+  // off `sandbox`. Evaluating the name inside the same context resolves it the
+  // way the script itself would.
+  const evaluate = (expression) => vm.runInContext(expression, sandbox);
+
   const listener = (listeners.determiningFilename || [])[0];
   if (!listener) throw new Error('background.js registered no onDeterminingFilename listener');
-  return { listener };
+  return { listener, evaluate };
 }
 
 /** Fires the listener and reports everything Chrome would observe. */
@@ -282,6 +302,48 @@ async function main() {
       returned === true
         ? 'returned true, which forces an answer and stalls the download if none comes'
         : `answered ${JSON.stringify(calls[0])}`
+    );
+  }
+
+  // Abstaining is not the same as not looking.
+  //
+  // The listener sees the id of every extension that starts a download, and
+  // that id is the fact the August 2026 hunt lacked. Recording it must not
+  // change the abstention, so both are asserted on the same run: nothing said,
+  // and the sighting kept.
+  {
+    const { listener, evaluate } = bootWorker({ sessionDelayMs: 0 });
+    await settle(20);
+
+    const { returned, calls } = ask(listener, twinDownload);
+    ask(listener, twinDownload);
+    await settle(100);
+
+    check(
+      'recording a sighting does not make us answer',
+      calls.length === 0 && returned !== true,
+      calls.length ? `answered ${JSON.stringify(calls[0])}` : ''
+    );
+
+    const seen = evaluate('Array.from(otherDownloaders.values())');
+    check(
+      'the twin is recorded by id, and counted rather than duplicated',
+      seen.length === 1 && seen[0].count === 2,
+      seen.length ? JSON.stringify(seen) : 'nothing recorded - a diagnostics report would say "none seen"'
+    );
+  }
+
+  // A download the seller started themselves belongs to no extension. Filing it
+  // as interference would point the next investigation at a ghost.
+  {
+    const { listener, evaluate } = bootWorker({ sessionDelayMs: 0 });
+    await settle(20);
+    ask(listener, { id: 91, url: 'https://sitegiant.co/export.zip', filename: 'export.zip' });
+    await settle(100);
+    check(
+      'a download nobody started is not recorded as another extension',
+      evaluate('otherDownloaders.size') === 0,
+      JSON.stringify(evaluate('Array.from(otherDownloaders.values())'))
     );
   }
 

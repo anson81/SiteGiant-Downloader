@@ -7,6 +7,11 @@
  * when either site is redesigned.
  */
 
+// lib/diagnostics.js builds the report the Options page copies. A plain script
+// attaching to self, not a module, because this worker is not one.
+importScripts('../lib/diagnostics.js');
+const Diagnostics = self.SGD_Diagnostics;
+
 const SITEGIANT = 'https://sitegiant.co';
 const ORDERS_URL = `${SITEGIANT}/orders`;
 const ORDERS_QUEUE_URL = `${SITEGIANT}/orders/export`;
@@ -629,6 +634,33 @@ function decideDownloadPath(item) {
   return pendingPath;
 }
 
+/* ------------------------------------------------------------------ *
+ * Who else is answering Chrome about downloads.
+ *
+ * Chrome asks every extension holding the downloads permission about every
+ * download in the browser, and hands us the asking extension's id. We abstain
+ * on those - see the listener below - but the id is worth keeping, because it
+ * is the single fact that would have ended the August 2026 filename hunt in
+ * minutes rather than a fortnight. It costs nothing and needs no permission;
+ * asking Chrome the same question means declaring "management", which changes
+ * the install warning to say this extension reads the list of installed
+ * extensions.
+ *
+ * In memory only, and deliberately not persisted. A sighting matters while the
+ * worker that saw it is alive - which is exactly the run being diagnosed - and
+ * writing to storage from this listener would mean doing work before it
+ * returns, which is the mistake this file has already made twice.
+ * ------------------------------------------------------------------ */
+const otherDownloaders = new Map();
+
+function noteOtherDownloader(id, at) {
+  if (!id) return;
+  const seen = otherDownloaders.get(id) || { id, count: 0, lastAt: 0 };
+  seen.count += 1;
+  seen.lastAt = at;
+  otherDownloaders.set(id, seen);
+}
+
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   // SAY NOTHING ABOUT DOWNLOADS THAT ARE NOT OURS.
   //
@@ -649,7 +681,14 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   // count this extension for this download at all. And byExtensionId is known
   // synchronously from the event itself, so this needs no stored state and is
   // correct even on a worker that has just woken up.
-  if (item.byExtensionId !== chrome.runtime.id) return;
+  if (item.byExtensionId !== chrome.runtime.id) {
+    // Wrapped, and nothing else. If this ever threw, the listener would leave
+    // without answering AND without abstaining cleanly, which is the exact
+    // failure the guard above exists to prevent. A dropped sighting costs a
+    // line in a diagnostics report; a thrown listener costs the file.
+    try { noteOtherDownloader(item.byExtensionId, Date.now()); } catch (_) { /* never worth a download */ }
+    return;
+  }
 
   // ANSWER SYNCHRONOUSLY WHENEVER POSSIBLE.
   //
@@ -1207,6 +1246,43 @@ async function handle(msg) {
     case 'getHistory': {
       const { history = [] } = await chrome.storage.local.get('history');
       return { history };
+    }
+
+    // Everything the Options page needs for "Copy diagnostics", gathered here
+    // because the worker is the only side that can see the run history and the
+    // sightings above. The formatting lives in lib/diagnostics.js so it can be
+    // tested without a browser.
+    case 'getDiagnostics': {
+      const settings = await getSettings();
+      const stored = await chrome.storage.local.get(['history', 'updateInfo']);
+      return {
+        ok: true,
+        report: Diagnostics.buildReport({
+          now: Date.now(),
+          extension: {
+            name: chrome.runtime.getManifest().name,
+            version: currentVersion(),
+            id: chrome.runtime.id
+          },
+          browser: navigator.userAgent,
+          platform: (navigator.userAgentData && navigator.userAgentData.platform) || '',
+          folder: {
+            chosen: msg.reportsFolder === true,
+            name: msg.reportsFolderName || '',
+            extensionFolderGranted: msg.extensionFolderGranted === true
+          },
+          updateSource: settings.updateSource || null,
+          updateInfo: stored.updateInfo || null,
+          otherExtensions: Array.from(otherDownloaders.values())
+            .sort((a, b) => b.lastAt - a.lastAt),
+          history: stored.history || [],
+          historyLimit: 5,
+          notes: [
+            'ProfitLens origin: ' + (settings.profitLensOrigin || '(default)'),
+            'Push to ProfitLens: ' + (settings.push ? 'on' : 'off')
+          ]
+        })
+      };
     }
     case 'clearHistory':
       await chrome.storage.local.remove('history');

@@ -147,6 +147,74 @@ async function refreshOutputFolder() {
   forget.hidden = false;
 }
 
+/* ------------------------------------------------------------------ *
+ * Diagnostics
+ *
+ * The worker holds the facts; this page holds the clipboard. Splitting it that
+ * way keeps the formatting in lib/diagnostics.js, where a node test can read it
+ * without a browser.
+ *
+ * The text is shown as well as copied, deliberately. It carries folder paths
+ * and report names, and someone about to paste that into a chat is entitled to
+ * see it first. It doubles as the fallback: if the clipboard write is refused -
+ * which happens when the page has lost focus - the text is on screen and still
+ * selectable.
+ * ------------------------------------------------------------------ */
+async function copyDiagnostics() {
+  const button = $('copy-diagnostics');
+  const note = $('diagnostics-copied');
+  const pre = $('diagnostics');
+
+  button.disabled = true;
+  note.hidden = true;
+
+  // Read here rather than in the worker: the folder handle lives in this page's
+  // IndexedDB, and the worker has never been able to see it.
+  let outputName = '';
+  try {
+    const handle = await idbGet(OUTPUT_KEY);
+    outputName = handle ? handle.name : '';
+  } catch (e) {
+    outputName = '';
+  }
+
+  let res = null;
+  try {
+    res = await send({
+      type: 'getDiagnostics',
+      reportsFolder: !!outputName,
+      reportsFolderName: outputName,
+      extensionFolderGranted: !!(await idbGet(HANDLE_KEY).catch(() => null))
+    });
+  } catch (e) {
+    res = { ok: false, error: (e && e.message) || String(e) };
+  }
+
+  if (!res || !res.report) {
+    pre.hidden = false;
+    pre.textContent =
+      'Could not gather diagnostics: ' + ((res && res.error) || 'no answer from the extension') +
+      '\n\nThat is itself worth reporting.';
+    button.disabled = false;
+    return;
+  }
+
+  pre.hidden = false;
+  pre.textContent = res.report;
+
+  try {
+    await navigator.clipboard.writeText(res.report);
+    note.hidden = false;
+    note.textContent = 'Copied \u2014 paste it into your chat';
+  } catch (e) {
+    // Not worth hiding: the text is on screen, so say what to do with it.
+    note.hidden = false;
+    note.textContent = 'Could not reach the clipboard \u2014 select the text below and copy it';
+  }
+
+  button.disabled = false;
+}
+
 async function pickOutputFolder() {
   const status = $('output-status');
 
@@ -384,6 +452,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderUpdate(await send({ type: 'checkUpdate' }));
   });
   $('install').addEventListener('click', install);
+  $('copy-diagnostics').addEventListener('click', copyDiagnostics);
   $('pick-output').addEventListener('click', pickOutputFolder);
   $('forget-output').addEventListener('click', async () => {
     await idbDelete(OUTPUT_KEY);
