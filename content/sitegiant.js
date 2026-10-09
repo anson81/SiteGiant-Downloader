@@ -219,22 +219,33 @@
    * Orders export modal.
    * ------------------------------------------------------------------ */
 
-  /** Opens the 3-dot menu. Click first, hover as a fallback. */
+  /**
+   * Opens the 3-dot menu. Click first, hover as a fallback.
+   *
+   * SiteGiant rebuilt this menu around 2026-10-07: the trigger went from
+   * div.ellipsis-btn to <button aria-label="More Actions">, and the items from
+   * p.un-dots-option to <button role="option">. Both old selectors are kept in
+   * case an account is still served the old page.
+   *
+   * There is deliberately NO text fallback for the trigger any more. It matched
+   * "•••" and the first such thing on /orders is the PAGINATION ellipsis — so
+   * when the real button changed, every run clicked the page numbers and then
+   * waited for a menu that was never going to open. Failing to find the
+   * trigger is a clearer error than clicking the wrong one.
+   */
   async function openOrdersMenu() {
     const trigger = await waitFor(
       () =>
-        document.querySelector('div.ellipsis-btn') ||
-        findByText(/^•{3}$|^\.{3}$/, 'div,button,span'),
+        document.querySelector('button[aria-label="More Actions"]') ||
+        document.querySelector('div.ellipsis-btn'),
       { label: 'the orders 3-dot menu' }
     );
 
     fullClick(trigger);
 
-    // The menu items carry their own class, which is far more stable than
-    // text — the visible label is split across <span> and <b><span>, and
     // "Exported" sits in the same menu, so the text match must be exact.
     const find = () =>
-      Array.from(document.querySelectorAll('p.un-dots-option')).find(
+      Array.from(document.querySelectorAll('[role="option"], p.un-dots-option')).find(
         (el) => isVisible(el) && /^Export Orders$/i.test(squash(el.textContent))
       ) || findByText(/^Export Orders$/i);
 

@@ -1,7 +1,7 @@
 {
-    "version":  "1.12.2",
+    "version":  "1.12.3",
     "notes":  [
-                  "Internal only: carries the shared diagnostics builder up to date with the Shopee downloader, which now records why a file was or was not placed. Nothing changes in this extension\u0027s behaviour."
+                  "Orders downloads work again. SiteGiant redesigned the 3-dot menu on the Orders page around 7 October, and since then every Orders run stopped with \"Timed out waiting for the Export Orders menu item\". Stock & Cost was never affected."
               ],
     "files":  [
                   "background/background.js",
