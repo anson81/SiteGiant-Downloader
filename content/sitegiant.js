@@ -334,10 +334,25 @@
    * read without scrolling first describes the wrong months.
    */
   async function openFieldAt(input, month) {
-    fullClick(input);
-    await waitFor(openPicker, { timeout: 5000, label: 'the date picker' });
-    await sleep(300);
-    return scrollToMonth(month);
+    // The calendar has to be open AFTER the settle, not just once before it.
+    //
+    // Watched on the live dialog 2026-10-16: the calendar opened on the first
+    // click, then closed BY ITSELF ~0.7s later, and the next click took 1.8s to
+    // bring it back. A dropdown that is about to close also still matches
+    // openPicker() for a moment. So one click and a fixed 300ms sometimes
+    // handed back no calendar at all, and the pick that followed was reported
+    // as "SiteGiant would not accept 2026-09-16" — a date it accepts happily.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      fullClick(input);
+      try {
+        await waitFor(openPicker, { timeout: 5000, label: 'the date picker' });
+      } catch (_) {
+        continue;
+      }
+      await sleep(300);
+      if (openPicker()) return scrollToMonth(month);
+    }
+    throw new Error("SiteGiant's calendar kept closing before a date could be picked");
   }
 
   /** Takes a date if the picker allows it. Returns false if it is refused. */
@@ -394,6 +409,9 @@
    * and with NOTHING chosen it anchors that window near today. Naively picking
    * the target start first therefore fails on anything older than about three
    * months — which is what made a request for May die on 2026-05-01.
+   * (Re-measured after the October redesign, 2026-10-16: with nothing chosen
+   * every date was on offer, and a start of 16 Sep allowed ends up to 17 Oct —
+   * the start plus 31 days. The walk below still holds for either behaviour.)
    *
    * But the window RATCHETS: every pick re-anchors it to the other field, so
    * taking the earliest date on offer drags the whole window back ~31 days, and
@@ -463,7 +481,15 @@
     // because there start and end share a month and the two are the same.
     const finalPanel = await openFieldAt(startInput, startISO.slice(0, 7));
     if (!(await takeCell(finalPanel, startISO))) {
-      throw new Error(`SiteGiant would not accept ${startISO} as the start date`);
+      // Say which failure it was. "Would not accept" once covered a calendar
+      // that had simply closed, and sent the diagnosis after SiteGiant's limits.
+      const panel = openPicker();
+      if (!panel) {
+        throw new Error(`SiteGiant's calendar closed before ${startISO} could be picked as the start date`);
+      }
+      throw new Error(
+        `SiteGiant would not accept ${startISO} as the start date — the earliest it offered was ${earliestOffered(panel) ?? 'nothing'}`
+      );
     }
     await sleep(400);
   }

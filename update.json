@@ -1,7 +1,7 @@
 {
-    "version":  "1.12.3",
+    "version":  "1.12.4",
     "notes":  [
-                  "Orders downloads work again. SiteGiant redesigned the 3-dot menu on the Orders page around 7 October, and since then every Orders run stopped with \"Timed out waiting for the Export Orders menu item\". Stock & Cost was never affected."
+                  "Orders downloads no longer stop with \"SiteGiant would not accept ... as the start date\". SiteGiant was accepting the date; its calendar was closing on its own just before the pick. The extension now reopens it and tries again."
               ],
     "files":  [
                   "background/background.js",
