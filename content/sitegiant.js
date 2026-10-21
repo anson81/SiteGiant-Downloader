@@ -171,11 +171,16 @@
     }
   }
 
-  function collectLinks(marker) {
+  /** `pattern` is tested against the file's folder and name: `items/batch_edit_...zip`. */
+  function collectLinks(pattern) {
     return Array.from(document.querySelectorAll('a[href]'))
       .map((a) => a.href)
-      .filter((href) => href.includes(CDN) && href.includes(marker))
-      .map((href) => ({ url: href, name: basename(href) }));
+      .filter((href) => href.includes(CDN))
+      .map((href) => ({ url: href, name: basename(href) }))
+      .filter(({ url, name }) => {
+        const folder = url.split('/').slice(-2, -1)[0];
+        return pattern.test(`${folder}/${name}`);
+      });
   }
 
   /**
@@ -186,9 +191,9 @@
    * ever been exported — which then creates a needless export. An empty list is
    * still a legitimate answer, so this gives up quickly rather than hanging.
    */
-  async function readQueue(marker) {
+  async function readQueue(pattern) {
     try {
-      await waitFor(() => collectLinks(marker).length > 0, {
+      await waitFor(() => collectLinks(pattern).length > 0, {
         timeout: 5000,
         interval: 200,
         label: 'the export list',
@@ -196,11 +201,15 @@
     } catch (_) {
       /* genuinely empty */
     }
-    return collectLinks(marker);
+    return collectLinks(pattern);
   }
 
-  const ordersQueue = () => readQueue('/orders/Orders_');
-  const batchQueue = () => readQueue('/items/batch_edit_basic_info_all_');
+  // The shop id is optional. SiteGiant started inserting it on 2026-10-21 —
+  // `batch_edit_3359_basic_info_all_...` — and the Stock & Cost reader, which
+  // looked for `batch_edit_basic_info_all_`, stopped seeing finished exports:
+  // it pressed Refresh until the run timed out with the file right there.
+  const ordersQueue = () => readQueue(/^orders\/Orders_(\d+_)?\d/);
+  const batchQueue = () => readQueue(/^items\/batch_edit_(\d+_)?basic_info_all_/);
 
   /**
    * Pending rows carry a badge. Used only to tell "still building" apart from

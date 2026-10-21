@@ -1,7 +1,7 @@
 {
-    "version":  "1.12.4",
+    "version":  "1.12.5",
     "notes":  [
-                  "Orders downloads no longer stop with \"SiteGiant would not accept ... as the start date\". SiteGiant was accepting the date; its calendar was closing on its own just before the pick. The extension now reopens it and tries again."
+                  "Stock & Cost downloads work again. SiteGiant started putting your shop number into the file name, so the extension did not recognise the finished file and kept refreshing the list until it gave up."
               ],
     "files":  [
                   "background/background.js",
