@@ -8,6 +8,7 @@ by hand.
 |---|---|
 | **Orders** | Your orders for the last 7 days, including the products in each one |
 | **Stock & Cost** | Cost price and stock on hand for every SKU |
+| **Returns** | Customer returns and refunds, with the products that came back |
 
 Files are also saved to your computer, in dated folders:
 
@@ -51,7 +52,7 @@ The green icon appears in your toolbar. Pin it if you like.
 1. Log in to **SiteGiant** as you normally would
 2. Log in to **ProfitLens** in the same Chrome
 3. Click the green icon
-4. Click **Sync both reports**
+4. Click **Sync all reports**
 
 That's it. Leave the window open while it runs — about a minute.
 
@@ -306,6 +307,44 @@ carries both `cost` and `stock_on_hand`, and it is the only shape
 
 The Bulk Tools menu on `/items` **opens on hover and ignores clicks**. Navigating
 straight to `/items/batch-edit` sidesteps it.
+
+**Customer Return and Refund** (mapped live 2 Nov 2026, account `qfmoffic`) —
+`/marketplaces/marketplace-order-return` (sidebar Orders → Order Return →
+Marketplace → Manage; `/orders/order-return-mgmt` is only the chooser). The page
+has two tabs, **Customer Return and Refund** (default, the one used) and
+Failed Delivery and Return (not used).
+
+- Trigger: the 3-dot `<button>` beside "Sync Customer Return Order", whose class
+  includes `group/ellipsis`. Its menu has **Export Customer Return And Refund**
+  and **Exported**.
+- The dialog (`.ant-modal-body` with `form.ant-legacy-form`) has an **Export**
+  action that is a text *link* at the dialog's top right (the × is top left), not
+  a button in the body. Find it by exact text `Export` within the dialog root.
+- "Export order return type": `value="info"` (default) and
+  `value="productInfo"` ("Order return info with products"). **`productInfo` is
+  required** - ProfitLens's parser needs iSKU, Returned Quantity and Restored
+  Quantity, which `info` lacks.
+- "Export order options": `dateRange` (default) or `selected`. Dates are the same
+  antd pickers as the orders export (`input[placeholder="Start Date"]` / `"End
+  Date"`), so `setExportDates()` / `pickRange()` are shared with Orders.
+- Queue: `/marketplaces/marketplace-order-return/export` ("Exported" in the
+  menu). Columns No. | Time Requested | Time Completed | Status, newest first; a
+  completed row gains a **Download** `<a>`. Completes in 2–4 seconds.
+- File: an **.xlsx**, not a zip, in the CDN folder `marketplace_order_return`:
+  `Customer_Return_Refund_3359_31-10-2026-1793430367.xlsx`. It still ends in the
+  request epoch, so `exportTimeMs()` reads `.xlsx` as well as `.zip`.
+- Columns: No., Return SN, Order ID, COID, Channel, Return Tracking No, Total
+  Refund Amount, Order Date, Create Time, Due Time, Received, Draft, Restored,
+  Date Restored, Parcel Received Date, Remark, Return Reason, Return Reason
+  Description, Return Order Status, Product Name, iSKU, SKU, Parent SKU, Variant
+  SKU, Returned Quantity, Restored Quantity.
+- Not observed: the maximum date span (a whole month was fine, both October and
+  September), and whether pressing Export navigates to the queue. The worker goes
+  to the queue itself afterwards, so either works. **The extension's own run
+  against live SiteGiant had not been done when v1.13.0 was written.**
+- Range is the same days as Orders. Returns has no month mode. It is pushed to
+  `POST /api/import/sitegiant-returns` (field `file`); a failure in one report
+  never stops the other two.
 
 ### Things that will bite you
 

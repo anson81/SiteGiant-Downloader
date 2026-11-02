@@ -52,6 +52,7 @@ function render(state) {
   $('run-all').disabled = running;
   $('run-orders').disabled = running;
   $('run-stockcost').disabled = running;
+  $('run-returns').disabled = running;
   $('run-month').disabled = running;
   $('month').disabled = running;
   // Reloading mid-run would kill the worker between the download and the push,
@@ -81,7 +82,7 @@ function render(state) {
     const fees = results.reduce((sum, r) => sum + (r.counts?.feeRateMissing || 0), 0);
     banner.textContent = fees
       ? `Done. ${fees} orders had no fee rate set, so their profit reads high.`
-      : 'Done. Both reports are in ProfitLens.';
+      : 'Done. All reports are in ProfitLens.';
   } else {
     banner.hidden = true;
   }
@@ -271,9 +272,10 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   $('month').removeAttribute('min');
 
-  $('run-all').addEventListener('click', () => run(['orders', 'stockcost']));
+  $('run-all').addEventListener('click', () => run(['orders', 'stockcost', 'returns']));
   $('run-orders').addEventListener('click', () => run(['orders']));
   $('run-stockcost').addEventListener('click', () => run(['stockcost']));
+  $('run-returns').addEventListener('click', () => run(['returns']));
   $('run-month').addEventListener('click', runMonth);
   $('cancel').addEventListener('click', () => send({ type: 'cancel' }));
 

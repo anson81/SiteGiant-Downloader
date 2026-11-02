@@ -209,6 +209,10 @@
   // looked for `batch_edit_basic_info_all_`, stopped seeing finished exports:
   // it pressed Refresh until the run timed out with the file right there.
   const ordersQueue = () => readQueue(/^orders\/Orders_(\d+_)?\d/);
+  // SiteGiant's returns queue (/marketplaces/marketplace-order-return/export): an .xlsx,
+  // not a zip, in its own CDN folder; the shop id is optional here too.
+  const returnsQueue = () =>
+    readQueue(/^marketplace_order_return\/Customer_Return_Refund_(\d+_)?\d/);
   const batchQueue = () => readQueue(/^items\/batch_edit_(\d+_)?basic_info_all_/);
 
   /**
@@ -503,33 +507,40 @@
     await sleep(400);
   }
 
-  async function ordersSubmit({ startISO, endISO }) {
-    const item = await openOrdersMenu();
-    fullClick(item);
-
-    const modal = await waitFor(
+  /** Waits for the export dialog to be on screen and returns its root. */
+  function waitForModal() {
+    return waitFor(
       () => {
         const root = document.querySelector('.ant-modal-root, .ant-modal-wrap');
         return root && isVisible(root) ? root : null;
       },
       { label: 'the export dialog' }
     );
+  }
 
-    // "Order Info with Products". Without this the export carries no line
-    // items, so no SKUs, so ProfitLens would import revenue with no cost.
-    const withProduct = await waitFor(
-      () => modal.querySelector('input[type=radio][value="withProduct"]'),
-      { label: 'the "with products" option' }
+  /**
+   * Ticks a radio inside the dialog if it is not already on. Shared by every
+   * export: the value attributes differ, the dance does not.
+   */
+  async function chooseRadio(modal, value, what) {
+    const radio = await waitFor(
+      () => modal.querySelector(`input[type=radio][value="${value}"]`),
+      { label: what }
     );
-    if (!withProduct.checked) {
-      fullClick(withProduct.closest('label') || withProduct);
+    if (!radio.checked) {
+      fullClick(radio.closest('label') || radio);
       await sleep(200);
     }
-    if (!withProduct.checked) {
-      throw new Error('Could not select "Order Info with Products"');
-    }
+    if (!radio.checked) throw new Error(`Could not select ${what}`);
+    return radio;
+  }
 
-    // Export by date range rather than current selection or filter results.
+  /**
+   * "Export by date range", then the two dates. The orders and returns dialogs
+   * share this exactly - antd pickers, readOnly inputs, the ratcheting window -
+   * so the walk in pickRange() is written once.
+   */
+  async function setExportDates(modal, startISO, endISO) {
     const byRange = modal.querySelector('input[type=radio][value="dateRange"]');
     if (byRange && !byRange.checked) {
       fullClick(byRange.closest('label') || byRange);
@@ -543,8 +554,22 @@
     await pickRange(isoDate(new Date(startISO)), isoDate(new Date(endISO)), startInput, endInput);
 
     if (!squash(startInput.value) || !squash(endInput.value)) {
-      throw new Error('The dates did not stick — SiteGiant may have changed its date picker');
+      throw new Error('The dates did not stick - SiteGiant may have changed its date picker');
     }
+  }
+
+  async function ordersSubmit({ startISO, endISO }) {
+    const item = await openOrdersMenu();
+    fullClick(item);
+
+    const modal = await waitForModal();
+
+    // "Order Info with Products". Without this the export carries no line
+    // items, so no SKUs, so ProfitLens would import revenue with no cost.
+    await chooseRadio(modal, 'withProduct', '"Order Info with Products"');
+
+    // Export by date range rather than current selection or filter results.
+    await setExportDates(modal, startISO, endISO);
 
     const submit = await waitFor(
       () => {
@@ -560,6 +585,105 @@
     // background worker waits for that load; this context is about to die.
     return { ok: true };
   }
+
+  /* ------------------------------------------------------------------ *
+   * Customer Return and Refund export - Orders -> Order Return ->
+   * Marketplace -> Manage. Mapped live 2 Nov 2026.
+   *
+   * The 3-dot trigger is a <button> whose class carries `group/ellipsis`. Its
+   * menu holds "Export Customer Return And Refund" and "Exported". The dialog's
+   * Export action is a text LINK at its top right (the x is top left), not a
+   * button inside .ant-modal-body, so it is found by exact text in the dialog.
+   * ------------------------------------------------------------------ */
+  async function returnsSubmit({ startISO, endISO }) {
+    let trigger;
+    try {
+      trigger = await waitFor(() => document.querySelector('button[class*="group/ellipsis"]'), {
+        timeout: 10000,
+        label: 'the returns 3-dot menu',
+      });
+    } catch (_) {
+      throw new Error(
+        "Could not find the 3-dot menu on SiteGiant's Order Return page " +
+          '(Orders -> Order Return -> Marketplace -> Manage). Is the Customer Return and ' +
+          'Refund tab open, and has SiteGiant changed the page?'
+      );
+    }
+
+    fullClick(trigger);
+
+    const find = () =>
+      Array.from(document.querySelectorAll('[role="option"], [role="menuitem"], li, p, button, a')).find(
+        (el) => isVisible(el) && /^Export Customer Return (and|&) Refund$/i.test(squash(el.textContent))
+      );
+    let item;
+    try {
+      item = await waitFor(find, { timeout: 4000, label: 'the Export Customer Return And Refund item' });
+    } catch (_) {
+      hover(trigger);
+      try {
+        item = await waitFor(find, { timeout: 4000, label: 'the Export Customer Return And Refund item' });
+      } catch (_) {
+        throw new Error(
+          'The 3-dot menu on the Order Return page opened without "Export Customer Return ' +
+            'And Refund" in it - SiteGiant may have changed its menu.'
+        );
+      }
+    }
+    fullClick(item);
+
+    const modal = await waitForModal();
+
+    // "Order return info with products". The plain "info" export has no iSKU,
+    // Returned Quantity or Restored Quantity, which ProfitLens needs to cost
+    // what came back.
+    await chooseRadio(modal, 'productInfo', '"Order return info with products"');
+
+    await setExportDates(modal, startISO, endISO);
+
+    const submit = await waitFor(
+      () => {
+        const exact = (el) =>
+          isVisible(el) &&
+          /^Export$/i.test(squash(el.textContent)) &&
+          !Array.from(el.children).some((c) => /^Export$/i.test(squash(c.textContent)));
+        const all = Array.from(modal.querySelectorAll('button, a, [role="button"], span, div'));
+        return all.find((el) => exact(el) && /^(BUTTON|A)$/.test(el.tagName)) || all.find(exact);
+      },
+      { label: 'the Export link in the dialog' }
+    );
+    const startUrl = location.href;
+    fullClick(submit);
+
+    // Whether Export navigates or is an AJAX call is not known. If it is AJAX,
+    // leaving the page at once can abort the request and no export is made, so
+    // wait for the dialog to close (or the URL to change) and a beat more.
+    // Bounded: if neither happens the queue poll decides.
+    const settled = await settleAfterExport(modal, startUrl);
+    return { ok: true, settled };
+  }
+
+  /**
+   * Waits (up to `timeout` ms) for the export dialog to close or the address to
+   * change, then `after` ms more so the request has left the page. Resolves with
+   * 'closed', 'navigated', or null when neither happened in time.
+   */
+  async function settleAfterExport(modal, startUrl, { timeout = 10000, after = 1500 } = {}) {
+    let how = null;
+    try {
+      how = await waitFor(
+        () => (location.href !== startUrl ? 'navigated' : !isVisible(modal) ? 'closed' : null),
+        { timeout, interval: 200, label: 'the export dialog to close' }
+      );
+    } catch (_) {
+      return null;
+    }
+    await sleep(after);
+    return how;
+  }
+  // Lets tools/test-returns-export.js exercise the wait on its own. Absent in
+  // the browser: only that test's sandbox sets the flag.
+  if (window.__sgDlWantsTestHook) window.__sgDlTest = { settleAfterExport };
 
   /* ------------------------------------------------------------------ *
    * Batch Edit — the stock & cost export.
@@ -618,6 +742,10 @@
         return checkLogin();
       case 'ordersQueue':
         return { rows: await ordersQueue(), pending: pendingCount() };
+      case 'returnsQueue':
+        return { rows: await returnsQueue(), pending: pendingCount() };
+      case 'returnsSubmit':
+        return returnsSubmit(msg);
       case 'batchQueue':
         return { rows: await batchQueue(), pending: pendingCount() };
       case 'ordersSubmit':

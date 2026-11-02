@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SiteGiant Downloader",
-  "version": "1.12.5",
-  "description": "Download SiteGiant orders and stock/cost reports, and push them into ProfitLens",
+  "version": "1.13.0",
+  "description": "Download SiteGiant orders, stock/cost and returns reports, and push them into ProfitLens",
   "minimum_chrome_version": "111",
   "permissions": [
     "clipboardWrite",

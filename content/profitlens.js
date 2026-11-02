@@ -74,7 +74,11 @@
     const token = await getAccessToken();
 
     const form = new FormData();
-    form.append('file', toBlob(base64), filename);
+    // The returns export is a spreadsheet; the others are zips.
+    const mime = /\.xlsx$/i.test(filename)
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'application/zip';
+    form.append('file', toBlob(base64, mime), filename);
 
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -93,8 +97,10 @@
     return {
       ok: true,
       filename,
-      created: data.created ?? 0,
-      updated: data.updated ?? 0,
+      // The returns import nests its counts under `summary`; the other two
+      // answer with them at the top.
+      created: data.created ?? data.summary?.created ?? 0,
+      updated: data.updated ?? data.summary?.updated ?? 0,
       unchanged: data.unchanged ?? 0,
       // Non-zero means some orders predate any configured fee rate and were
       // costed with zero fees, so their profit reads high. Surfaced rather

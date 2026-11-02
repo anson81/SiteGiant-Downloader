@@ -1,7 +1,7 @@
 {
-    "version":  "1.12.5",
+    "version":  "1.13.0",
     "notes":  [
-                  "Stock & Cost downloads work again. SiteGiant started putting your shop number into the file name, so the extension did not recognise the finished file and kept refreshing the list until it gave up."
+                  "New: Sync now also fetches your SiteGiant customer returns and refunds and sends them to ProfitLens, so the Money owed page can see them. There is a Returns button too, if you only want that one."
               ],
     "files":  [
                   "background/background.js",

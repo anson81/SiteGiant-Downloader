@@ -16,6 +16,8 @@ const SITEGIANT = 'https://sitegiant.co';
 const ORDERS_URL = `${SITEGIANT}/orders`;
 const ORDERS_QUEUE_URL = `${SITEGIANT}/orders/export`;
 const BATCH_EDIT_URL = `${SITEGIANT}/items/batch-edit`;
+const RETURNS_URL = `${SITEGIANT}/marketplaces/marketplace-order-return`;
+const RETURNS_QUEUE_URL = `${RETURNS_URL}/export`;
 const ROOT_FOLDER = 'SiteGiant';
 
 /** ProfitLens's multer limit. Anything larger is refused before it is sent. */
@@ -33,6 +35,14 @@ const REPORTS = [
     label: 'Stock & Cost',
     endpoint: '/api/import/products',
     marker: 'batch_edit_basic_info_all_',
+  },
+  {
+    // Customer Return and Refund, "with products" (iSKU, returned and restored
+    // quantity). An .xlsx, not a zip - see exportTimeMs.
+    id: 'returns',
+    label: 'Returns',
+    endpoint: '/api/import/sitegiant-returns',
+    marker: 'Customer_Return_Refund_',
   },
 ];
 
@@ -122,6 +132,7 @@ async function getSettings() {
     'updateSource',
     'lastSuccessfulPush',
     'lastOrdersExport',
+    'lastReturnsExport',
   ]);
   return {
     profitLensOrigin: stored.profitLensOrigin || DEFAULTS.profitLensOrigin,
@@ -130,6 +141,7 @@ async function getSettings() {
     updateSource: stored.updateSource || DEFAULTS.updateSource,
     lastSuccessfulPush: stored.lastSuccessfulPush || null,
     lastOrdersExport: stored.lastOrdersExport || null,
+    lastReturnsExport: stored.lastReturnsExport || null,
   };
 }
 
@@ -172,7 +184,9 @@ const pad = (n) => String(n).padStart(2, '0');
  * the second, so SiteGiant's clock and this machine's agree.
  */
 function exportTimeMs(name) {
-  const match = /-(\d{10})\.zip$/i.exec(String(name || ''));
+  // `.xlsx` as well as `.zip`: the returns export is a spreadsheet, and without
+  // this it would read as infinitely old and could never prove it was new.
+  const match = /-(\d{10})\.(?:zip|xlsx)$/i.exec(String(name || ''));
   return match ? Number(match[1]) * 1000 : 0;
 }
 
@@ -492,6 +506,69 @@ async function runOrders(tabId, settings, { month } = {}) {
     lastOrdersExport: { name: row.name, days, month: range?.label ?? null },
   });
   return { ...row, reused: false, days, month: range?.label ?? null };
+}
+
+/**
+ * Customer Return and Refund (Orders -> Order Return -> Marketplace -> Manage).
+ *
+ * Same shape as orders - a date range, a queue, an export built in seconds -
+ * and the same reuse rule: only an export this extension made for this window.
+ * The range is the same days as orders. Unlike orders there is no month mode:
+ * the returns report only ever follows the rolling window.
+ *
+ * Whether submitting navigates to the queue is not known, so after the click we
+ * go to the queue ourselves rather than waiting to land there.
+ */
+async function runReturns(tabId, settings) {
+  await navigate(tabId, RETURNS_QUEUE_URL);
+
+  const days = windowDays(settings);
+  const { rows } = await sendToContent(tabId, { type: 'returnsQueue' });
+  const remembered = settings.lastReturnsExport;
+
+  if (
+    remembered &&
+    remembered.days === days &&
+    exportAgeMs(remembered.name) < REUSE_WINDOW_MS &&
+    rows.some((r) => r.name === remembered.name)
+  ) {
+    const row = rows.find((r) => r.name === remembered.name);
+    return { ...row, reused: true, days };
+  }
+
+  const before = new Set(rows.map((r) => r.name));
+  const end = new Date();
+  const start = addDays(end, -(days - 1));
+
+  await navigate(tabId, RETURNS_URL);
+  const since = Date.now();
+
+  try {
+    await sendToContent(tabId, {
+      type: 'returnsSubmit',
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
+    });
+  } catch (err) {
+    const message = err?.message || String(err);
+    const navigatedAway = /message port closed|Receiving end does not exist|Extension context/i.test(
+      message
+    );
+    if (!navigatedAway) throw err;
+  }
+
+  await navigate(tabId, RETURNS_QUEUE_URL);
+
+  const row = await pollForNewExport(tabId, {
+    command: 'returnsQueue',
+    before,
+    refresh: 'reload',
+    since,
+    timeoutMs: 120000,
+  });
+
+  await chrome.storage.local.set({ lastReturnsExport: { name: row.name, days } });
+  return { ...row, reused: false, days };
 }
 
 /**
@@ -842,7 +919,11 @@ async function saveFile(base64, filename) {
   let downloadId;
   try {
     downloadId = await chrome.downloads.download({
-      url: `data:application/zip;base64,${base64}`,
+      url: `data:${
+        /\.xlsx$/i.test(filename)
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : 'application/zip'
+      };base64,${base64}`,
       filename: path,
       conflictAction: 'overwrite',
       saveAs: false,
@@ -1013,7 +1094,9 @@ async function runReports(ids, { month } = {}) {
       const row =
         report.id === 'orders'
           ? await runOrders(tabId, settings, { month })
-          : await runStockCost(tabId);
+          : report.id === 'returns'
+            ? await runReturns(tabId, settings)
+            : await runStockCost(tabId);
 
       // Say WHY a file was reused. "Reusing today's export" looked like a
       // failure to generate — the age is the whole explanation.
