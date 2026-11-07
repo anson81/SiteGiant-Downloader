@@ -274,7 +274,7 @@ content/sitegiant.js       ISOLATED: all SiteGiant DOM
 content/profitlens.js      ISOLATED: same-origin refresh + multipart upload
 popup/                     toolbar UI
 options/                   settings + update install
-tools/                     make-release.ps1, inspect-sitegiant.js
+tools/                     make-release.js, inspect-sitegiant.js
 icons/
 ```
 
@@ -435,8 +435,8 @@ Failed Delivery and Return (not used).
 
 ### Releasing
 
-```powershell
-.\tools\make-release.ps1 -Version 1.1.0 -Notes "What changed"
+```bash
+node tools/make-release.js 1.1.0 "What changed"
 git add -A; git commit -m "v1.1.0"; git push
 ```
 
