@@ -58,9 +58,14 @@ const REPORTS = [
 /**
  * The failed delivery export filters on the ORDER date, and a parcel is listed
  * as failed one to three weeks after it was ordered, so a week of orders would
- * miss most of them. A month is as far as SiteGiant's picker goes.
+ * miss most of them. One export covers a month; the picker reaches about three
+ * months back (18 Aug on 17 Nov 2026), so each run asks for three months, one
+ * export each. A parcel still not back is re-read for three months, and one
+ * that never came back stays visible in ProfitLens after that (Anson, 17 Nov:
+ * 586618726206899461, ordered 16 Oct, was missed by the 30-day window).
  */
 const FAILED_DELIVERY_DAYS = 30;
+const FAILED_DELIVERY_WINDOWS = 3;
 
 const DEFAULTS = {
   // ProfitLens is live at profitlens.my since 2026-08-13 (Synology NAS behind a
@@ -624,11 +629,26 @@ function syncNote(synced) {
 /** Failed Delivery and Return: the same steps as Customer Return and Refund, on the other tab. */
 async function runFailedDelivery(tabId, settings) {
   const synced = await syncReturnsOnce(tabId, 'failedDelivery');
+  const windows = [];
+  for (let i = 0; i < FAILED_DELIVERY_WINDOWS; i += 1) {
+    try {
+      windows.push(await exportFailedWindow(tabId, settings, i, synced));
+    } catch (err) {
+      // The newest month is the one that matters; an older one failing is said, not fatal.
+      if (i === 0) throw err;
+      windows.push({ error: err?.message || String(err), index: i });
+    }
+  }
+  return { windows, days: FAILED_DELIVERY_DAYS * FAILED_DELIVERY_WINDOWS };
+}
+
+/** One month of orders, `index` months back (0 = the last 30 days, ending today). */
+async function exportFailedWindow(tabId, settings, index, synced) {
   await navigate(tabId, RETURNS_QUEUE_URL);
 
   const days = FAILED_DELIVERY_DAYS;
   const { rows } = await sendToContent(tabId, { type: 'failedQueue' });
-  const remembered = settings.lastFailedDeliveryExport;
+  const remembered = index === 0 ? settings.lastFailedDeliveryExport : null;
   if (
     !syncChanged(synced) &&
     remembered &&
@@ -637,11 +657,11 @@ async function runFailedDelivery(tabId, settings) {
     rows.some((r) => r.name === remembered.name)
   ) {
     const row = rows.find((r) => r.name === remembered.name);
-    return { ...row, reused: true, days };
+    return { ...row, reused: true, days, index };
   }
 
   const before = new Set(rows.map((r) => r.name));
-  const end = new Date();
+  const end = addDays(new Date(), -index * days);
   const start = addDays(end, -(days - 1));
 
   await navigate(tabId, RETURNS_URL);
@@ -654,12 +674,52 @@ async function runFailedDelivery(tabId, settings) {
     const message = err?.message || String(err);
     if (!/message port closed|Receiving end does not exist|Extension context/i.test(message)) throw err;
   }
-  if (submitted?.empty) return { empty: true, days };
+  if (submitted?.empty) return { empty: true, days, index };
 
   await navigate(tabId, RETURNS_QUEUE_URL);
   const row = await pollForNewExport(tabId, { command: 'failedQueue', before, refresh: 'reload', since, timeoutMs: 120000 });
-  await chrome.storage.local.set({ lastFailedDeliveryExport: { name: row.name, days } });
-  return { ...row, reused: false, days };
+  if (index === 0) await chrome.storage.local.set({ lastFailedDeliveryExport: { name: row.name, days } });
+  return { ...row, reused: false, days, index };
+}
+
+/**
+ * Failed deliveries come as up to three files (one per month of orders). Each
+ * is saved and sent like any report; the counts are added up into one line.
+ * Returns whether anything reached ProfitLens.
+ */
+async function saveAndPushWindows(report, run, settings) {
+  const total = { created: 0, updated: 0, unchanged: 0 };
+  const notes = [];
+  let pushedAny = false;
+  for (const w of run.windows) {
+    const label = w.index === 0 ? 'last 30 days' : `${w.index * 30}–${w.index * 30 + 29} days back`;
+    if (w.error) { notes.push(`${label}: ${w.error}`); continue; }
+    if (w.empty) continue;
+    setResult(report.id, { status: 'downloading', message: `Downloading orders of the ${label}…`, filename: w.name });
+    const { base64, size } = await fetchZip(w.url);
+    await saveFile(base64, w.name);
+    if (!settings.push) continue;
+    if (size > MAX_UPLOAD_BYTES) { notes.push(`${label}: file too big for ProfitLens (${(size / 1048576).toFixed(1)} MB)`); continue; }
+    setResult(report.id, { status: 'pushing', message: `Sending orders of the ${label} to ProfitLens…`, filename: w.name });
+    const pushed = await pushToProfitLens(report, w.name, base64, settings);
+    pushedAny = true;
+    total.created += pushed.created ?? 0;
+    total.updated += pushed.updated ?? 0;
+    total.unchanged += pushed.unchanged ?? 0;
+  }
+  const files = run.windows.filter((w) => !w.empty && !w.error).length;
+  const message =
+    files === 0
+      ? `SiteGiant has none for orders of the last ${run.days} days`
+      : settings.push
+        ? `${total.created} new · ${total.updated} updated · ${total.unchanged} unchanged · orders of the last ${run.days} days (${files} file${files === 1 ? '' : 's'})`
+        : `Saved ${files} file${files === 1 ? '' : 's'} · orders of the last ${run.days} days`;
+  setResult(report.id, {
+    status: notes.length && files === 0 ? 'error' : 'done',
+    message: message + syncNote(state.returnsSynced) + (notes.length ? ` · not read: ${notes.join('; ')}` : ''),
+    counts: total,
+  });
+  return pushedAny;
 }
 
 /**
@@ -1190,6 +1250,11 @@ async function runReports(ids, { month } = {}) {
             : report.id === 'failedDelivery'
               ? await runFailedDelivery(tabId, settings)
               : await runStockCost(tabId);
+
+      if (row.windows) {
+        anyPushed = (await saveAndPushWindows(report, row, settings)) || anyPushed;
+        continue;
+      }
 
       if (row.empty) {
         setResult(report.id, { status: 'done', message: `SiteGiant has none for orders of the last ${row.days} days` });

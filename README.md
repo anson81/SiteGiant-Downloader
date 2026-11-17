@@ -362,8 +362,12 @@ Return**, Exported), same dialog (`productInfo`, date range), same queue; the
 file is `marketplace_order_return/Failed_Delivery_Return_<shop>_<date>-<epoch>.xlsx`.
 **Its date range filters on the order date**: 1-17 Nov answered "No record
 found!" (an antd message, and no file) for parcels that failed in November on
-October orders, so the extension asks for 30 days and reports "none" on that
-message instead of waiting for a file. Pushed to the same ProfitLens returns
+October orders, so the extension asks for orders by month and reports "none" on
+that message instead of waiting for a file. **Three months each run** (v1.15.0):
+one export per 30 days of orders (0-29, 30-59, 60-89 days back), each saved and
+pushed. The picker reaches about three months back (earliest 18 Aug on 17 Nov
+2026); a parcel ordered earlier and still not back comes in only through
+**Export by Selected Orders** (tick its row, export, import on ProfitLens). Pushed to the same ProfitLens returns
 address, which tells the two files apart by their headers.
 
 ### Things that will bite you

@@ -1,8 +1,7 @@
 {
-  "version": "1.14.0",
+  "version": "1.15.0",
   "notes": [
-    "Returns: presses SiteGiant's Sync Customer Return Order first, so the file is up to date",
-    "New report: Failed Delivery and Return, sent to ProfitLens so it can list parcels that never came back"
+    "Failed deliveries: three months of orders each run, one export a month, so a parcel ordered over 30 days ago and still not back reaches ProfitLens"
   ],
   "files": [
     "README.md",

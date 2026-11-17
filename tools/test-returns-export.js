@@ -212,6 +212,7 @@ function bootWorker() {
     JSON.stringify(failed)
   );
   check('a failed delivery export asks for a month of orders', evaluate('FAILED_DELIVERY_DAYS') === 30, 'not 30');
+  check('a run asks for three months of failed deliveries, one export each', evaluate('FAILED_DELIVERY_WINDOWS') === 3, 'not 3');
   const failedQueue = await send({ type: 'failedQueue' });
   check(
     'failedQueue sees only the Failed_Delivery_Return_ file',
