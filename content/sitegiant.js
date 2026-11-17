@@ -213,6 +213,9 @@
   // not a zip, in its own CDN folder; the shop id is optional here too.
   const returnsQueue = () =>
     readQueue(/^marketplace_order_return\/Customer_Return_Refund_(\d+_)?\d/);
+  // The Failed Delivery and Return export lands in the same queue and folder (17 Nov 2026).
+  const failedQueue = () =>
+    readQueue(/^marketplace_order_return\/Failed_Delivery_Return_(\d+_)?\d/);
   const batchQueue = () => readQueue(/^items\/batch_edit_(\d+_)?basic_info_all_/);
 
   /**
@@ -596,6 +599,74 @@
    * button inside .ant-modal-body, so it is found by exact text in the dialog.
    * ------------------------------------------------------------------ */
   async function returnsSubmit({ startISO, endISO }) {
+    return exportFromReturnPage({ startISO, endISO, menu: /^Export Customer Return (and|&) Refund$/i, menuName: 'Export Customer Return And Refund' });
+  }
+
+  /**
+   * Failed Delivery and Return export - the tab beside Customer Return and
+   * Refund on the same page. Mapped live 17 Nov 2026: the same 3-dot menu
+   * ("Export Failed Delivery and Return", "Exported"), the same dialog
+   * (`productInfo`, a date range) and the same queue. Its date range filters
+   * on the ORDER date: 1-17 Nov answered "No record found!" for parcels that
+   * failed in November on October orders.
+   */
+  async function failedSubmit({ startISO, endISO }) {
+    const tab = await waitFor(
+      () => Array.from(document.querySelectorAll('[role="tab"]')).find((t) => isVisible(t) && /Failed Delivery/i.test(t.textContent)),
+      { timeout: 10000, label: 'the Failed Delivery and Return tab' }
+    );
+    fullClick(tab);
+    await waitFor(() => (tab.getAttribute('aria-selected') === 'true' ? true : null), { timeout: 5000, label: 'the Failed Delivery tab to open' }).catch(() => null);
+    await sleep(1200);
+    return exportFromReturnPage({ startISO, endISO, menu: /^Export Failed Delivery (and|&) Return$/i, menuName: 'Export Failed Delivery and Return' });
+  }
+
+  /**
+   * "Sync Customer Return Order" - asks SiteGiant to fetch the newest returns
+   * from every shop before anything is exported (Anson, 17 Nov 2026). Mapped
+   * live: the button opens "Sync Summary" with "Date Created Between" already
+   * set to the last 30 days and a Sync button; pressed, it lists INSERT and
+   * Update per shop ("QFM Shopee>> Total:0"), each line gaining its Total as
+   * that shop finishes (about a second on 17 Nov). Closed with its x.
+   */
+  async function returnsSync() {
+    const button = await waitFor(
+      () => Array.from(document.querySelectorAll('button')).find((b) => isVisible(b) && /^Sync Customer Return Order$/i.test(squash(b.textContent))),
+      { timeout: 10000, label: 'the Sync Customer Return Order button' }
+    );
+    fullClick(button);
+    const modal = await waitForModal();
+    const go = await waitFor(
+      () => Array.from(modal.querySelectorAll('button')).find((b) => isVisible(b) && /^Sync$/i.test(squash(b.textContent))),
+      { label: 'the Sync button in the Sync Summary' }
+    );
+    fullClick(go);
+
+    // Done when at least one shop is listed and every listed shop has its Total.
+    const finished = () => {
+      const lines = modal.innerText.split('\n').filter((l) => l.includes('>>'));
+      return lines.length > 0 && lines.every((l) => /Total:\s*\d+/i.test(l)) ? lines : null;
+    };
+    let lines = null;
+    try {
+      lines = await waitFor(finished, { timeout: 90000, interval: 500, label: 'SiteGiant to finish syncing returns' });
+    } catch (_) {
+      /* still syncing after 90 s: carry on with what SiteGiant has */
+    }
+    const text = modal.innerText;
+    const total = (part) =>
+      (part || '').split('\n').reduce((sum, l) => sum + Number((/Total:\s*(\d+)/i.exec(l) || [])[1] || 0), 0);
+    const [, insertPart, updatePart] = /INSERT([\s\S]*?)Update([\s\S]*)/i.exec(text) || [];
+
+    const close = modal.querySelector('[aria-label="close"], .ant-modal-close');
+    if (close) fullClick(close);
+    else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(600);
+
+    return { ok: true, finished: Boolean(lines), inserted: total(insertPart), updated: total(updatePart) };
+  }
+
+  async function exportFromReturnPage({ startISO, endISO, menu, menuName }) {
     let trigger;
     try {
       trigger = await waitFor(() => document.querySelector('button[class*="group/ellipsis"]'), {
@@ -614,19 +685,18 @@
 
     const find = () =>
       Array.from(document.querySelectorAll('[role="option"], [role="menuitem"], li, p, button, a')).find(
-        (el) => isVisible(el) && /^Export Customer Return (and|&) Refund$/i.test(squash(el.textContent))
+        (el) => isVisible(el) && menu.test(squash(el.textContent))
       );
     let item;
     try {
-      item = await waitFor(find, { timeout: 4000, label: 'the Export Customer Return And Refund item' });
+      item = await waitFor(find, { timeout: 4000, label: `the ${menuName} item` });
     } catch (_) {
       hover(trigger);
       try {
-        item = await waitFor(find, { timeout: 4000, label: 'the Export Customer Return And Refund item' });
+        item = await waitFor(find, { timeout: 4000, label: `the ${menuName} item` });
       } catch (_) {
         throw new Error(
-          'The 3-dot menu on the Order Return page opened without "Export Customer Return ' +
-            'And Refund" in it - SiteGiant may have changed its menu.'
+          `The 3-dot menu on the Order Return page opened without "${menuName}" in it - SiteGiant may have changed its menu.`
         );
       }
     }
@@ -660,7 +730,11 @@
     // wait for the dialog to close (or the URL to change) and a beat more.
     // Bounded: if neither happens the queue poll decides.
     const settled = await settleAfterExport(modal, startUrl);
-    return { ok: true, settled };
+    // "No record found!": SiteGiant made no file, so there is nothing to wait for.
+    const empty = Array.from(document.querySelectorAll('.ant-message, [role="alert"]')).some((el) =>
+      /No record found/i.test(el.textContent || '')
+    );
+    return { ok: true, settled, empty };
   }
 
   /**
@@ -746,6 +820,12 @@
         return { rows: await returnsQueue(), pending: pendingCount() };
       case 'returnsSubmit':
         return returnsSubmit(msg);
+      case 'failedQueue':
+        return { rows: await failedQueue(), pending: pendingCount() };
+      case 'failedSubmit':
+        return failedSubmit(msg);
+      case 'returnsSync':
+        return returnsSync();
       case 'batchQueue':
         return { rows: await batchQueue(), pending: pendingCount() };
       case 'ordersSubmit':

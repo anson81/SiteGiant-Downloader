@@ -44,7 +44,23 @@ const REPORTS = [
     endpoint: '/api/import/sitegiant-returns',
     marker: 'Customer_Return_Refund_',
   },
+  {
+    // Failed Delivery and Return, the tab beside it (17 Nov 2026): parcels that
+    // never reached the buyer and should come back. Same page, dialog and queue;
+    // ProfitLens takes it at the returns address and tells the two apart.
+    id: 'failedDelivery',
+    label: 'Failed deliveries',
+    endpoint: '/api/import/sitegiant-returns',
+    marker: 'Failed_Delivery_Return_',
+  },
 ];
+
+/**
+ * The failed delivery export filters on the ORDER date, and a parcel is listed
+ * as failed one to three weeks after it was ordered, so a week of orders would
+ * miss most of them. A month is as far as SiteGiant's picker goes.
+ */
+const FAILED_DELIVERY_DAYS = 30;
 
 const DEFAULTS = {
   // ProfitLens is live at profitlens.my since 2026-08-13 (Synology NAS behind a
@@ -133,6 +149,7 @@ async function getSettings() {
     'lastSuccessfulPush',
     'lastOrdersExport',
     'lastReturnsExport',
+    'lastFailedDeliveryExport',
   ]);
   return {
     profitLensOrigin: stored.profitLensOrigin || DEFAULTS.profitLensOrigin,
@@ -142,6 +159,7 @@ async function getSettings() {
     lastSuccessfulPush: stored.lastSuccessfulPush || null,
     lastOrdersExport: stored.lastOrdersExport || null,
     lastReturnsExport: stored.lastReturnsExport || null,
+    lastFailedDeliveryExport: stored.lastFailedDeliveryExport || null,
   };
 }
 
@@ -520,6 +538,7 @@ async function runOrders(tabId, settings, { month } = {}) {
  * go to the queue ourselves rather than waiting to land there.
  */
 async function runReturns(tabId, settings) {
+  const synced = await syncReturnsOnce(tabId, 'returns');
   await navigate(tabId, RETURNS_QUEUE_URL);
 
   const days = windowDays(settings);
@@ -527,6 +546,7 @@ async function runReturns(tabId, settings) {
   const remembered = settings.lastReturnsExport;
 
   if (
+    !syncChanged(synced) &&
     remembered &&
     remembered.days === days &&
     exportAgeMs(remembered.name) < REUSE_WINDOW_MS &&
@@ -568,6 +588,77 @@ async function runReturns(tabId, settings) {
   });
 
   await chrome.storage.local.set({ lastReturnsExport: { name: row.name, days } });
+  return { ...row, reused: false, days };
+}
+
+/**
+ * Presses SiteGiant's "Sync Customer Return Order" once per run, before the
+ * first returns export, so the file holds what Shopee and TikTok know now
+ * (Anson, 17 Nov 2026). A sync that fails does not stop the export: SiteGiant
+ * syncs on its own too, and the file is still worth having.
+ */
+async function syncReturnsOnce(tabId, reportId) {
+  if (state.returnsSynced) return state.returnsSynced;
+  setResult(reportId, { status: 'exporting', message: 'Syncing returns in SiteGiant…' });
+  await navigate(tabId, RETURNS_URL);
+  try {
+    const res = await sendToContent(tabId, { type: 'returnsSync' });
+    state.returnsSynced = res && !res.error ? res : { ok: false, error: res?.error };
+  } catch (err) {
+    state.returnsSynced = { ok: false, error: err?.message || String(err) };
+  }
+  setResult(reportId, { status: 'exporting', message: 'Asking SiteGiant…' });
+  return state.returnsSynced;
+}
+
+/** Whether the sync brought anything in: then an export made before it is out of date. */
+const syncChanged = (synced) => Boolean(synced && (synced.inserted > 0 || synced.updated > 0));
+
+/** One line for the popup: what the sync did. */
+function syncNote(synced) {
+  if (!synced) return '';
+  if (!synced.ok) return ' · SiteGiant sync did not run';
+  return ` · synced first: ${synced.inserted} new, ${synced.updated} updated`;
+}
+
+/** Failed Delivery and Return: the same steps as Customer Return and Refund, on the other tab. */
+async function runFailedDelivery(tabId, settings) {
+  const synced = await syncReturnsOnce(tabId, 'failedDelivery');
+  await navigate(tabId, RETURNS_QUEUE_URL);
+
+  const days = FAILED_DELIVERY_DAYS;
+  const { rows } = await sendToContent(tabId, { type: 'failedQueue' });
+  const remembered = settings.lastFailedDeliveryExport;
+  if (
+    !syncChanged(synced) &&
+    remembered &&
+    remembered.days === days &&
+    exportAgeMs(remembered.name) < REUSE_WINDOW_MS &&
+    rows.some((r) => r.name === remembered.name)
+  ) {
+    const row = rows.find((r) => r.name === remembered.name);
+    return { ...row, reused: true, days };
+  }
+
+  const before = new Set(rows.map((r) => r.name));
+  const end = new Date();
+  const start = addDays(end, -(days - 1));
+
+  await navigate(tabId, RETURNS_URL);
+  const since = Date.now();
+
+  let submitted = null;
+  try {
+    submitted = await sendToContent(tabId, { type: 'failedSubmit', startISO: start.toISOString(), endISO: end.toISOString() });
+  } catch (err) {
+    const message = err?.message || String(err);
+    if (!/message port closed|Receiving end does not exist|Extension context/i.test(message)) throw err;
+  }
+  if (submitted?.empty) return { empty: true, days };
+
+  await navigate(tabId, RETURNS_QUEUE_URL);
+  const row = await pollForNewExport(tabId, { command: 'failedQueue', before, refresh: 'reload', since, timeoutMs: 120000 });
+  await chrome.storage.local.set({ lastFailedDeliveryExport: { name: row.name, days } });
   return { ...row, reused: false, days };
 }
 
@@ -1096,7 +1187,14 @@ async function runReports(ids, { month } = {}) {
           ? await runOrders(tabId, settings, { month })
           : report.id === 'returns'
             ? await runReturns(tabId, settings)
-            : await runStockCost(tabId);
+            : report.id === 'failedDelivery'
+              ? await runFailedDelivery(tabId, settings)
+              : await runStockCost(tabId);
+
+      if (row.empty) {
+        setResult(report.id, { status: 'done', message: `SiteGiant has none for orders of the last ${row.days} days` });
+        continue;
+      }
 
       // Say WHY a file was reused. "Reusing today's export" looked like a
       // failure to generate — the age is the whole explanation.
@@ -1147,6 +1245,7 @@ async function runReports(ids, { month } = {}) {
           message:
             `${pushed.created} new · ${pushed.updated} updated · ${pushed.unchanged} unchanged` +
             (row.reused ? ` · from a ${ageMin} min old export` : '') +
+            (report.id === 'returns' || report.id === 'failedDelivery' ? syncNote(state.returnsSynced) : '') +
             nameNote,
           counts: pushed,
         });

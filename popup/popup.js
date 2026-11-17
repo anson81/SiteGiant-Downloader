@@ -272,10 +272,10 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   $('month').removeAttribute('min');
 
-  $('run-all').addEventListener('click', () => run(['orders', 'stockcost', 'returns']));
+  $('run-all').addEventListener('click', () => run(['orders', 'stockcost', 'returns', 'failedDelivery']));
   $('run-orders').addEventListener('click', () => run(['orders']));
   $('run-stockcost').addEventListener('click', () => run(['stockcost']));
-  $('run-returns').addEventListener('click', () => run(['returns']));
+  $('run-returns').addEventListener('click', () => run(['returns', 'failedDelivery']));
   $('run-month').addEventListener('click', runMonth);
   $('cancel').addEventListener('click', () => send({ type: 'cancel' }));
 

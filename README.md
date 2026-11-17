@@ -311,8 +311,8 @@ straight to `/items/batch-edit` sidesteps it.
 **Customer Return and Refund** (mapped live 2 Nov 2026, account `qfmoffic`) —
 `/marketplaces/marketplace-order-return` (sidebar Orders → Order Return →
 Marketplace → Manage; `/orders/order-return-mgmt` is only the chooser). The page
-has two tabs, **Customer Return and Refund** (default, the one used) and
-Failed Delivery and Return (not used).
+has two tabs, **Customer Return and Refund** (default) and **Failed Delivery and
+Return** (used since v1.14.0, see below).
 
 - Trigger: the 3-dot `<button>` beside "Sync Customer Return Order", whose class
   includes `group/ellipsis`. Its menu has **Export Customer Return And Refund**
@@ -345,6 +345,26 @@ Failed Delivery and Return (not used).
 - Range is the same days as Orders. Returns has no month mode. It is pushed to
   `POST /api/import/sitegiant-returns` (field `file`); a failure in one report
   never stops the other two.
+
+
+**Sync Customer Return Order** (mapped live 17 Nov 2026) - the green button on
+the same page opens "Sync Summary" with "Date Created Between" already set to
+the last 30 days and a **Sync** button. Pressed, it lists INSERT and Update per
+shop (`QFM Shopee>> Total:0`), each line gaining its `Total:` as that shop
+finishes - about a second that day. Closed with its × (`[aria-label="close"]`).
+Every run presses it once, before the first returns export; a failed sync does
+not stop the export, and a sync that brought anything in stops an older export
+being reused.
+
+**Failed Delivery and Return** (mapped live 17 Nov 2026) - the second tab
+(`[role="tab"]` with that text). Same 3-dot menu (**Export Failed Delivery and
+Return**, Exported), same dialog (`productInfo`, date range), same queue; the
+file is `marketplace_order_return/Failed_Delivery_Return_<shop>_<date>-<epoch>.xlsx`.
+**Its date range filters on the order date**: 1-17 Nov answered "No record
+found!" (an antd message, and no file) for parcels that failed in November on
+October orders, so the extension asks for 30 days and reports "none" on that
+message instead of waiting for a file. Pushed to the same ProfitLens returns
+address, which tells the two files apart by their headers.
 
 ### Things that will bite you
 

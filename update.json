@@ -1,26 +1,27 @@
 {
-    "version":  "1.13.0",
-    "notes":  [
-                  "New: Sync now also fetches your SiteGiant customer returns and refunds and sends them to ProfitLens, so the Money owed page can see them. There is a Returns button too, if you only want that one."
-              ],
-    "files":  [
-                  "background/background.js",
-                  "content/profitlens.js",
-                  "content/sitegiant.js",
-                  "icons/icon128.png",
-                  "icons/icon16.png",
-                  "icons/icon48.png",
-                  "lib/diagnostics.js",
-                  "manifest.json",
-                  "offscreen/offscreen.html",
-                  "offscreen/offscreen.js",
-                  "options/options.css",
-                  "options/options.html",
-                  "options/options.js",
-                  "popup/popup.css",
-                  "popup/popup.html",
-                  "popup/popup.js",
-                  "README.md",
-                  "update.json"
-              ]
+  "version": "1.14.0",
+  "notes": [
+    "Returns: presses SiteGiant's Sync Customer Return Order first, so the file is up to date",
+    "New report: Failed Delivery and Return, sent to ProfitLens so it can list parcels that never came back"
+  ],
+  "files": [
+    "README.md",
+    "background/background.js",
+    "content/profitlens.js",
+    "content/sitegiant.js",
+    "icons/icon128.png",
+    "icons/icon16.png",
+    "icons/icon48.png",
+    "lib/diagnostics.js",
+    "manifest.json",
+    "offscreen/offscreen.html",
+    "offscreen/offscreen.js",
+    "options/options.css",
+    "options/options.html",
+    "options/options.js",
+    "popup/popup.css",
+    "popup/popup.html",
+    "popup/popup.js",
+    "update.json"
+  ]
 }

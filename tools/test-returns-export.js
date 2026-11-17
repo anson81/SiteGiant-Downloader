@@ -29,6 +29,8 @@ const CDN = 'https://cdn1.sgliteasset.com/qfmoffic';
 const LINKS = [
   `${CDN}/marketplace_order_return/Customer_Return_Refund_3359_31-10-2026-1793430367.xlsx`,
   `${CDN}/marketplace_order_return/Customer_Return_Refund_30-10-2026-1793300000.xlsx`,
+  // Read off the live queue 17 Nov 2026: the failed delivery export shares it.
+  `${CDN}/marketplace_order_return/Failed_Delivery_Return_3359_17-11-2026-1794876007.xlsx`,
   `${CDN}/orders/Orders_3359_21-10-2026-1792539978.zip`,
   `${CDN}/items/batch_edit_3359_basic_info_all_21-10-2026-1792540000.zip`,
 ];
@@ -201,6 +203,47 @@ function bootWorker() {
       batch.rows.every((r) => /basic_info_all_/.test(r.name)),
     `orders ${JSON.stringify(orders.rows)} batch ${JSON.stringify(batch.rows)}`
   );
+
+  // --- Failed Delivery and Return: its own report, its own queue reader -----
+  const failed = reports.find((r) => r.id === 'failedDelivery');
+  check(
+    'failedDelivery pushes to the returns address and marks Failed_Delivery_Return_',
+    failed && failed.endpoint === '/api/import/sitegiant-returns' && failed.marker === 'Failed_Delivery_Return_',
+    JSON.stringify(failed)
+  );
+  check('a failed delivery export asks for a month of orders', evaluate('FAILED_DELIVERY_DAYS') === 30, 'not 30');
+  const failedQueue = await send({ type: 'failedQueue' });
+  check(
+    'failedQueue sees only the Failed_Delivery_Return_ file',
+    (failedQueue.rows || []).length === 1 && failedQueue.rows[0].name === 'Failed_Delivery_Return_3359_17-11-2026-1794876007.xlsx',
+    `got ${JSON.stringify(failedQueue.rows)}`
+  );
+  check(
+    'a sync that brought something in makes an older export out of date',
+    evaluate('syncChanged({ ok: true, inserted: 2, updated: 0 })') === true &&
+      evaluate('syncChanged({ ok: true, inserted: 0, updated: 0 })') === false &&
+      evaluate('syncChanged(null)') === false,
+    'syncChanged wrong'
+  );
+  check(
+    'the popup says what the sync did',
+    evaluate("syncNote({ ok: true, inserted: 1, updated: 3 })") === ' · synced first: 1 new, 3 updated' &&
+      evaluate("syncNote({ ok: false })") === ' · SiteGiant sync did not run',
+    evaluate("syncNote({ ok: true, inserted: 1, updated: 3 })")
+  );
+  {
+    const page = bootContent({ links: [], fastClock: true });
+    const out = await Promise.race([
+      page({ type: 'failedSubmit', startISO: '2026-10-19T00:00:00+08:00', endISO: '2026-11-17T00:00:00+08:00' }),
+      new Promise((r) => setTimeout(() => r({ hung: true }), 5000)),
+    ]);
+    check('failedSubmit without the tab fails with a sentence, no hang', !out.hung && /Failed Delivery/i.test(out.error || ''), JSON.stringify(out));
+    const sync = await Promise.race([
+      page({ type: 'returnsSync' }),
+      new Promise((r) => setTimeout(() => r({ hung: true }), 5000)),
+    ]);
+    check('returnsSync without the button fails with a sentence, no hang', !sync.hung && /Sync Customer Return Order/i.test(sync.error || ''), JSON.stringify(sync));
+  }
 
   // --- a page without the control fails with a sentence --------------------
   const lost = bootContent({ links: [], fastClock: true });
